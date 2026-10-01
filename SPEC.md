@@ -32,10 +32,12 @@ An offline-first, always-on-top Windows 11 HUD that listens to a Teams call (sys
 | Docs | `Markdig` | 1.4.0 |
 | CI | `Microsoft.TeamFoundationServer.Client` | 20.279.0-preview |
 | Web | Brave Search API `GET https://api.search.brave.com/res/v1/web/search` (`X-Subscription-Token`) | — |
-| MVVM | `CommunityToolkit.Mvvm` | 8.4.0 |
-| Tests | `xunit.v3`, `Microsoft.NET.Test.Sdk`, `NSubstitute` | latest stable at scaffold time, pinned in `Directory.Packages.props` |
+| MVVM | `CommunityToolkit.Mvvm` | 8.4.2 |
+| Windowing | `WinUIEx` | 2.9.3 |
+| Helpers | `Humanizer.Core` 3.0.10 · `Raffinert.FuzzySharp` 2.0.3 · `Polly.Core` 8.7.0 · `Microsoft.Extensions.DependencyInjection` / `.Logging` / `.Logging.Debug` 10.0.x | — |
+| Tests | `xunit.v3` 4.0.1 · `Microsoft.NET.Test.Sdk` · `NSubstitute` 6.2.0 · `Verify.XunitV3` 31.25.0 · `coverlet.collector` | pinned in `Directory.Packages.props` |
 
-Not used (decided): DirectML, CUDA, Vulkan, Radzen/Blazor, Ollama/LLMs, MSIX.
+Not used (decided): DirectML, CUDA, Vulkan, Radzen/Blazor, Ollama/LLMs, MSIX, CsWin32, Meziantou CredentialManager, `PasswordVault` (needs package identity).
 
 ## 4. Commands
 
