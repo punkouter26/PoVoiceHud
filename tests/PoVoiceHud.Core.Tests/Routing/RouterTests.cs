@@ -14,8 +14,59 @@ public class RouterTests
     private static FakeProvider Recording(Intent handles, List<string> calls, double confidence = 1) =>
         new(handles, q => { calls.Add($"{handles}:{q.Text}"); return new Insight(handles, handles.ToString(), "answer", [], confidence); });
 
-    private static Router Build(IEnumerable<IInsightProvider> providers, SymbolIndex? index = null) =>
-        new(providers, () => index, NullLogger<Router>.Instance);
+    private const Intent RepoSources = Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline | Intent.Web;
+
+    private static Router Build(IEnumerable<IInsightProvider> providers, SymbolIndex? index = null, Intent enabled = RepoSources) =>
+        new(providers, () => index, () => enabled, NullLogger<Router>.Instance);
+
+    [Fact]
+    public async Task Disabled_sources_are_never_asked()
+    {
+        var calls = new List<string>();
+        var router = Build([Recording(Intent.Git, calls), Recording(Intent.Schema, calls)], enabled: Intent.Git);
+
+        var insights = await router.RouteAsync("who changed the schema for the inspection table", _ct);
+
+        Assert.Equal(Intent.Git, Assert.Single(insights).Intent);
+        Assert.DoesNotContain(calls, c => c.StartsWith("Schema:"));
+    }
+
+    [Fact]
+    public async Task Simple_mode_fact_checks_statements_and_ignores_questions()
+    {
+        var calls = new List<string>();
+        var router = Build([Recording(Intent.FactCheck, calls), Recording(Intent.Web, calls), Recording(Intent.Git, calls)], enabled: Intent.FactCheck);
+
+        Assert.Single(await router.RouteAsync("The Eiffel Tower was completed in 1889", _ct));
+        Assert.Equal(["FactCheck:The Eiffel Tower was completed in 1889"], calls);
+
+        calls.Clear();
+        Assert.Empty(await router.RouteAsync("what does IAsyncDisposable do again", _ct));
+        Assert.Empty(await router.RouteAsync("who modified the invoice service last week", _ct));
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public async Task Statements_are_not_fact_checked_when_the_source_is_off()
+    {
+        var calls = new List<string>();
+        var router = Build([Recording(Intent.FactCheck, calls), Recording(Intent.Git, calls)], enabled: Intent.Git);
+
+        Assert.Empty(await router.RouteAsync("The Eiffel Tower was completed in 1889", _ct));
+        Assert.Single(await router.RouteAsync("who modified the invoice service last week", _ct));
+        Assert.Equal(["Git:who modified the invoice service last week"], calls);
+    }
+
+    [Fact]
+    public async Task Repo_questions_can_also_be_fact_checked_when_both_are_on()
+    {
+        var calls = new List<string>();
+        var router = Build([Recording(Intent.FactCheck, calls), Recording(Intent.Git, calls)], enabled: Intent.Git | Intent.FactCheck);
+
+        var insights = await router.RouteAsync("the last commit on the invoice service was by Jane", _ct);
+
+        Assert.Equal(2, insights.Count);
+    }
 
     [Fact]
     public async Task Noise_is_dropped_before_any_provider_runs()

@@ -9,4 +9,5 @@ public enum Intent
     Docs = 4,
     Pipeline = 8,
     Web = 16,
+    FactCheck = 32,
 }

@@ -45,7 +45,7 @@ public class HudPipelineTests
     }
 
     private static Router RouterFor(TempRepo repo, params IInsightProvider[] providers) =>
-        new(providers, () => SymbolIndex.Build(repo.Root), NullLogger<Router>.Instance);
+        new(providers, () => SymbolIndex.Build(repo.Root), () => Settings.RepoSources, NullLogger<Router>.Instance);
 
     [Fact]
     [Trait("Category", "Model")]
@@ -138,7 +138,7 @@ public class HudPipelineTests
         var services = new ServiceCollection();
         services.AddSingleton<IAudioSource>(new FakeAudioSource([], TimeSpan.Zero));
         services.AddSingleton<ITranscriber>(new GatedTranscriber(""));
-        services.AddPoVoiceHudCore(new Settings { RepoPath = repo.Root }, new ModelPaths("unused", SileroVadTests.ModelPath));
+        services.AddPoVoiceHudCore(new Settings { RepoPath = repo.Root }.ApplyMode(HudMode.Repo), new ModelPaths("unused", SileroVadTests.ModelPath));
         await using var container = services.BuildServiceProvider();
 
         var providers = container.GetRequiredService<IEnumerable<IInsightProvider>>().ToList();

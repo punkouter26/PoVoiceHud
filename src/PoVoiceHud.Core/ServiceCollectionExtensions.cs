@@ -47,7 +47,8 @@ public static class ServiceCollectionExtensions
             new BraveProvider(sp.GetRequiredService<HttpClient>(), () => CredentialStore.Read(CredentialStore.BraveKey)));
 
         services.AddSingleton(sp => new Router(
-            sp.GetServices<IInsightProvider>(), () => sp.GetService<Workspace.Workspace>()?.Index, sp.GetRequiredService<ILogger<Router>>()));
+            sp.GetServices<IInsightProvider>(), () => sp.GetService<Workspace.Workspace>()?.Index, () => settings.EnabledSources,
+            sp.GetRequiredService<ILogger<Router>>()));
         services.AddSingleton<HudPipeline>();
         return services;
     }

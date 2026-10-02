@@ -40,4 +40,18 @@ public class IntentClassifierTests
     {
         Assert.Equal(expected, IntentClassifier.IsQuestion(text));
     }
+
+    [Theory]
+    [InlineData("The Eiffel Tower was completed in 1889", true)]
+    [InlineData("Python was created by Dennis Ritchie.", true)]
+    [InlineData("our build takes about eight minutes on main", true)]
+    [InlineData("is the build green?", false)]
+    [InlineData("what does IAsyncDisposable do again", false)]
+    [InlineData("let me share my screen", false)]
+    [InlineData("please open the invoice service", false)]
+    [InlineData("let's move on to the next item", false)]
+    public void Detects_declarative_statements(string text, bool expected)
+    {
+        Assert.Equal(expected, IntentClassifier.IsDeclarative(text));
+    }
 }

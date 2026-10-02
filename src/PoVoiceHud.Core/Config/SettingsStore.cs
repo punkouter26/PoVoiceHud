@@ -4,7 +4,11 @@ namespace PoVoiceHud.Core.Config;
 
 public static class SettingsStore
 {
-    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = true,
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+    };
 
     public static string DefaultPath { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PoVoiceHud", "settings.json");
@@ -14,7 +18,7 @@ public static class SettingsStore
         if (!File.Exists(path)) return (new Settings(), null);
         try
         {
-            return (JsonSerializer.Deserialize<Settings>(File.ReadAllText(path)) ?? new Settings(), null);
+            return (JsonSerializer.Deserialize<Settings>(File.ReadAllText(path), Options) ?? new Settings(), null);
         }
         catch (JsonException e)
         {

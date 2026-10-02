@@ -29,13 +29,22 @@ public static class IntentClassifier
         return result;
     }
 
+    private static readonly HashSet<string> CommandStarters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "let", "let's", "please", "go", "open", "show", "give", "send", "run", "check", "make", "tell", "call", "share", "try",
+    };
+
     public static bool IsQuestion(string text)
     {
         var trimmed = text.Trim();
         if (trimmed.EndsWith('?')) return true;
-        var firstWord = trimmed.Split(' ', 2)[0].TrimEnd(',', '.');
-        return QuestionStarters.Contains(firstWord);
+        return QuestionStarters.Contains(FirstWord(trimmed));
     }
+
+    /// <summary>A claim worth fact-checking: not a question, not a request or instruction.</summary>
+    public static bool IsDeclarative(string text) => !IsQuestion(text) && !CommandStarters.Contains(FirstWord(text.Trim()));
+
+    private static string FirstWord(string trimmed) => trimmed.Split(' ', 2)[0].TrimEnd(',', '.');
 
     private static Regex Rule(params string[] alternatives) =>
         new(@"\b(?:" + string.Join('|', alternatives) + @")\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
