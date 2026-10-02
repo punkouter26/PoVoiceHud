@@ -9,3 +9,4 @@ coverage/
 *.onnx
 !tests/**/Fixtures/**/*.wav
 .claude/settings.local.json
+*.received.*
