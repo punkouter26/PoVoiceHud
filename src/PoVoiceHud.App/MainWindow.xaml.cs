@@ -27,8 +27,15 @@ public sealed partial class MainWindow : WindowEx
         {
             if (e.PropertyName == nameof(HudViewModel.IsExpanded)) ApplyHeight();
         };
-        // WinUIEx restores the persisted size on activation, so re-apply the state-driven height afterwards.
-        Activated += (_, _) => ApplyHeight();
+        // WinUIEx restores the persisted size on first activation, so re-apply the state-driven height once after that.
+        // (Activated also fires on deactivation, including while closing, when Resize is no longer valid.)
+        void OnFirstActivation(object sender, WindowActivatedEventArgs e)
+        {
+            if (e.WindowActivationState == WindowActivationState.Deactivated) return;
+            Activated -= OnFirstActivation;
+            ApplyHeight();
+        }
+        Activated += OnFirstActivation;
         _tick.Tick += (_, _) => ViewModel.Tick(DateTimeOffset.Now);
         _tick.Start();
         Closed += (_, _) => _tick.Stop();
@@ -38,8 +45,21 @@ public sealed partial class MainWindow : WindowEx
 
     private void ApplyHeight() => Height = ViewModel.IsExpanded ? ExpandedHeight : PillHeight;
 
-    public void AttachSettings(SettingsViewModel settings) =>
-        SettingsButton.Flyout = new Flyout { Content = new Views.SettingsFlyout(settings), Placement = FlyoutPlacementMode.Bottom };
+    public void AttachSettings(SettingsViewModel settings)
+    {
+        var flyout = new Flyout
+        {
+            Content = new Views.SettingsFlyout(settings),
+            Placement = FlyoutPlacementMode.BottomEdgeAlignedRight,
+            ShouldConstrainToRootBounds = false,   // the pill is 44 px tall; the flyout must be allowed to spill outside it
+        };
+        flyout.Opening += (_, _) =>
+        {
+            ViewModel.IsPinned = true;
+            ViewModel.IsExpanded = true;
+        };
+        SettingsButton.Flyout = flyout;
+    }
 
     public void ShowSettings()
     {
