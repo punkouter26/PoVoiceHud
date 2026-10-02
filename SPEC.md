@@ -6,6 +6,20 @@ Version 1.0 · 2026-10-01 · Status: **awaiting approval**
 
 An offline-first, always-on-top Windows 11 HUD that listens to a Teams call (system loopback) and the local mic, transcribes locally with Whisper, detects technical questions, and answers them in one sentence from the active repository (git history, EF Core schema, `/docs` ADRs, Azure DevOps pipelines) with a `[Jump]` into VS Code. Audio never leaves the machine; the only outbound traffic is the optional AzDO query and the optional Brave web fallback.
 
+## 1a. Modes and toggles (change request, 2026-10-01)
+
+PoVoiceHud has two modes, switchable in Settings and persisted:
+
+| | **Simple mode (default)** | **Repo mode** |
+|---|---|---|
+| Audio input | `Mic` only — the person at the laptop | `Both` (mic + remote loopback); `Remote` only also available |
+| What is routed | Declarative statements (≥ 4 words, not a question) → **FactCheck** | Questions → Git / Schema / Docs / Pipeline / Web by intent |
+| Repo required | No | Yes (for Git/Schema/Docs) |
+
+Every source is an individual on/off toggle: **Git history**, **Schema**, **Docs/ADR**, **Azure DevOps**, **Web answers**, **Fact check**, plus the audio input selector (`Mic` / `Remote` / `Both`). Simple mode = `Mic` + Fact check on, everything else off; Repo mode = `Both` + the five repo/web sources on, Fact check off. Toggles can be mixed freely after choosing a mode.
+
+**FactCheck provider:** for each statement, Brave Search fetches up to 5 results (evidence), then an LLM hosted in the user's **Azure AI Foundry** project (serverless chat-completions endpoint, model name configurable, default a Llama 3.x instruct deployment) returns a JSON verdict `{verdict: supported|contradicted|unverified, reason, source}`. The card shows `✅ Supported` / `❌ Contradicted` / `⚠️ Unverified` + one-sentence reason + the best source link. Without a Foundry endpoint/key, the card shows the top search result with `⚠️ Unverified (no LLM configured)`. **Privacy:** in Simple mode the spoken statement and the search snippets leave the machine (Brave, and the user's own Azure tenant); audio never does.
+
 ## 2. User journeys
 
 1. **First run** — launch `PoVoiceHud.exe`; pick a repo root; the app downloads `ggml-base.en.bin` and `silero_vad.onnx` to `%LOCALAPPDATA%\PoVoiceHud\models` with a progress bar; status bar shows `● REC | Repo: <path>`.
@@ -17,6 +31,8 @@ An offline-first, always-on-top Windows 11 HUD that listens to a Teams call (sys
 7. **Mute** — press Win+Shift+M anywhere: capture stops, buffers and queues are flushed, REC dot turns red. Press again to resume.
 8. **Device switch** — unplug the headset mid-call: the app re-binds to the new default render/capture endpoints within 2 s without restart.
 9. **Reposition** — drag the HUD; it snaps to screen edges/corners; position is remembered.
+10. **Fact check (Simple mode)** — you say "The Eiffel Tower was completed in 1889" → within ~3 s a `[FACT]` card: `✅ Supported — Completed in March 1889 for the Exposition Universelle.` + link to the source. "Python was created by Dennis Ritchie" → `❌ Contradicted — Python was created by Guido van Rossum; Ritchie created C.`
+11. **Switch mode** — Settings → Repo mode: pick a repo; audio switches to `Both`; questions start producing repo cards.
 
 ## 3. Pinned stack
 
@@ -32,6 +48,7 @@ An offline-first, always-on-top Windows 11 HUD that listens to a Teams call (sys
 | Docs | `Markdig` | 1.4.0 |
 | CI | `Microsoft.TeamFoundationServer.Client` | 20.279.0-preview |
 | Web | Brave Search API `GET https://api.search.brave.com/res/v1/web/search` (`X-Subscription-Token`) | — |
+| Fact-check LLM | Azure AI Foundry serverless chat completions (OpenAI-compatible `POST {endpoint}/models/chat/completions`, `api-key` header, `response_format: json_object`), plain `HttpClient` — no SDK | api-version pinned in `FoundryClient` |
 | MVVM | `CommunityToolkit.Mvvm` | 8.4.2 |
 | Windowing | `WinUIEx` | 2.9.3 |
 | Helpers | `Humanizer.Core` 3.0.10 · `Raffinert.FuzzySharp` 2.0.3 · `Polly.Core` 8.7.0 · `Microsoft.Extensions.DependencyInjection` / `.Logging` / `.Logging.Debug` 10.0.x | — |
@@ -130,7 +147,7 @@ Coverage target: **≥80 % line coverage on `PoVoiceHud.Core`**, measured with `
 
 ## 9. Out of scope (v1)
 
-Speaker diarization · non-English models · multi-repo · MSIX/Store · GitHub Actions/GitLab providers · LLM-generated answers · transcript persistence · VS Code extension · tray icon · auto-update.
+Speaker diarization · non-English models · multi-repo · MSIX/Store · GitHub Actions/GitLab providers · LLM-generated answers for repo intents (the LLM is used only for fact-check verdicts) · transcript persistence · VS Code extension · tray icon · auto-update.
 
 ## 10. Edge cases & error states
 
@@ -166,6 +183,9 @@ Speaker diarization · non-English models · multi-repo · MSIX/Store · GitHub 
 10. Working set **≤450 MB** and CPU **≤6 %** (24-core, average over 60 s of streaming) measured with `Get-Process`/PerfMon, recorded in `docs/perf.md`.
 11. Mute hotkey clears queues: a test on `HudPipeline` proves no Insight is emitted from audio queued before `Mute()`.
 12. Manual: live Teams call — question in each of the 5 intents produces a correct card; every `[Jump]` opens VS Code at the right line (checklist signed off in `docs/manual-test.md`).
+13. Fact check: with a fake search + fake LLM, "supported"/"contradicted"/"unverified" verdicts render the three card forms; the Foundry client parses a recorded chat-completions response; no key → `⚠️ Unverified (no LLM configured)` with the top search result.
+14. Toggles: with Fact check off and Git on, a statement produces no card and a git question does; `Mic` input never opens the loopback device (unit-tested on the capture's device selection).
+15. Simple mode is the default on first run: no repo prompt, status bar shows `Mic · Fact check`.
 
 ## 12. Open questions
 
