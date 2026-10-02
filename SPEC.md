@@ -35,7 +35,7 @@ An offline-first, always-on-top Windows 11 HUD that listens to a Teams call (sys
 | MVVM | `CommunityToolkit.Mvvm` | 8.4.2 |
 | Windowing | `WinUIEx` | 2.9.3 |
 | Helpers | `Humanizer.Core` 3.0.10 · `Raffinert.FuzzySharp` 2.0.3 · `Polly.Core` 8.7.0 · `Microsoft.Extensions.DependencyInjection` / `.Logging` / `.Logging.Debug` 10.0.x | — |
-| Tests | `xunit.v3` 4.0.1 · `Microsoft.NET.Test.Sdk` · `NSubstitute` 6.2.0 · `Verify.XunitV3` 31.25.0 · `coverlet.collector` | pinned in `Directory.Packages.props` |
+| Tests | `xunit.v3` 4.0.1 (Microsoft.Testing.Platform runner) · `Microsoft.Testing.Extensions.CodeCoverage` 18.11.2 · `NSubstitute` 6.2.0 · `Verify.XunitV3` 31.25.0 | pinned in `Directory.Packages.props` |
 
 Not used (decided): DirectML, CUDA, Vulkan, Radzen/Blazor, Ollama/LLMs, MSIX, CsWin32, Meziantou CredentialManager, `PasswordVault` (needs package identity).
 
@@ -43,7 +43,8 @@ Not used (decided): DirectML, CUDA, Vulkan, Radzen/Blazor, Ollama/LLMs, MSIX, Cs
 
 ```
 dotnet build PoVoiceHud.sln -c Debug
-dotnet test  PoVoiceHud.sln
+dotnet test  --solution PoVoiceHud.sln                 # MTP mode (global.json "test.runner")
+dotnet test  --solution PoVoiceHud.sln --coverage      # Microsoft.Testing.Extensions.CodeCoverage
 dotnet format PoVoiceHud.sln --verify-no-changes      # lint
 dotnet run   --project src/PoVoiceHud.App
 dotnet publish src/PoVoiceHud.App -c Release -r win-x64 --self-contained
@@ -81,6 +82,12 @@ docs/adr/                        # this app's own ADRs (also exercises the Docs 
 tasks/plan.md, tasks/todo.md
 ```
 
+## 5a. HUD layout (Phase 3, concept 06 "Pill and expand")
+
+At rest the HUD is a one-line pill (~44 px): REC indicator · latest headline · expand toggle · settings. A new insight with confidence ≥ 0.6 auto-expands the full stack (status bar, Zone 1 focus card, Zone 2 shelf of ≤6, Zone 3 transcript of 8 lines) for 20 s, then collapses unless the pointer is over it; clicking the pill pins it open until clicked again. The window resizes between the two states.
+
+Hierarchy: `MainWindow` → `PillBar` + `ExpandedPanel` (`StatusBar`, `FocusCard`, `InsightShelf`→`ShelfCard`, `TranscriptStrip`), plus `SettingsFlyout`, `FirstRunDialog`. ViewModels: `HudViewModel`, `InsightCardViewModel`, `SettingsViewModel`.
+
 ## 6. Code style
 
 ```csharp
@@ -111,7 +118,7 @@ public interface IInsightProvider
 | Integration | `HudPipeline` end-to-end with `FakeAudioSource` replaying a WAV → asserts an `Insight` arrives | xUnit v3 |
 | Manual | Live Teams call checklist in `docs/manual-test.md` | — |
 
-Coverage target: **≥80 % line coverage on `PoVoiceHud.Core`**, measured with `coverlet`. App project is excluded (ViewModels are thin; tested via Core contracts). TDD: every task starts red.
+Coverage target: **≥80 % line coverage on `PoVoiceHud.Core`**, measured with `dotnet test --coverage` (Microsoft.Testing.Extensions.CodeCoverage; VSTest/coverlet is unsupported on the .NET 10 SDK with xunit.v3 4.x). App project is excluded (ViewModels are thin; tested via Core contracts). TDD: every task starts red.
 
 ## 8. Boundaries
 
