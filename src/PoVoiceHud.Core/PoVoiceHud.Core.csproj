@@ -12,5 +12,6 @@
     <PackageReference Include="Whisper.net.Runtime" />
     <PackageReference Include="LibGit2Sharp" />
     <PackageReference Include="Raffinert.FuzzySharp" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
 </Project>
