@@ -4,6 +4,7 @@ using Polly.Retry;
 using PoVoiceHud.Core.Providers;
 using PoVoiceHud.Core.Providers.Web;
 using PoVoiceHud.Core.Routing;
+using PoVoiceHud.Core.Tests.Fixtures;
 
 namespace PoVoiceHud.Core.Tests.Providers;
 
@@ -34,24 +35,13 @@ public class BraveProviderTests
         }
         """;
 
-    private sealed class FakeHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    private static (BraveProvider Provider, FakeHttpHandler Handler) Build(string? key, Func<HttpRequestMessage, HttpResponseMessage> respond)
     {
-        public List<HttpRequestMessage> Requests { get; } = [];
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-        {
-            Requests.Add(request);
-            return Task.FromResult(respond(request));
-        }
-    }
-
-    private static (BraveProvider Provider, FakeHandler Handler) Build(string? key, Func<HttpRequestMessage, HttpResponseMessage> respond)
-    {
-        var handler = new FakeHandler(respond);
+        var handler = new FakeHttpHandler(respond);
         return (new BraveProvider(new HttpClient(handler), () => key, NoDelay), handler);
     }
 
-    private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
-        new(status) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
+    private static HttpResponseMessage Json(string body) => FakeHttpHandler.Json(body);
 
     [Fact]
     public async Task Without_a_key_offers_a_search_link_and_makes_no_request()
