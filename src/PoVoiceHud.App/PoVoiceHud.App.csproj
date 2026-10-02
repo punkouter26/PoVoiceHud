@@ -9,10 +9,13 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <!-- CS0618 fires inside the XAML-generated XamlTypeInfo.g.cs for WinUIEx's obsolete Icon member. -->
     <WarningsNotAsErrors>CS0618</WarningsNotAsErrors>
+    <!-- LibraryImport (RegisterHotKey) generates unsafe stubs. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="WinUIEx" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PoVoiceHud.Core\PoVoiceHud.Core.csproj" />

@@ -33,7 +33,9 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Ellipse x:Name="RecDot" Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind local:MainWindow.RecBrush(ViewModel.IsMuted), Mode=OneWay}" />
+            <Button Background="Transparent" BorderThickness="0" Padding="4" Command="{x:Bind ViewModel.ToggleMuteCommand}" ToolTipService.ToolTip="Mute (Win+Shift+M)">
+                <Ellipse x:Name="RecDot" Width="10" Height="10" Fill="{x:Bind local:MainWindow.RecBrush(ViewModel.IsMuted), Mode=OneWay}" />
+            </Button>
             <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" VerticalAlignment="Center"
                        FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
             <Button Grid.Column="2" Command="{x:Bind ViewModel.ToggleExpandCommand}" Background="Transparent" BorderThickness="0"

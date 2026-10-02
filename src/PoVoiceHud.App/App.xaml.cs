@@ -1,5 +1,12 @@
 using System.Text.Json;
+using System.Threading.Channels;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
+using PoVoiceHud.App.Interop;
+using PoVoiceHud.Core;
+using PoVoiceHud.Core.Asr;
+using PoVoiceHud.Core.Config;
 using PoVoiceHud.Core.ViewModels;
 using WinUIEx;
 
@@ -15,7 +22,10 @@ public partial class App : Application
     // WinUIEx persists window placement through this dictionary (string values only);
     // unpackaged apps have no ApplicationData, so we back it with a JSON file.
     private readonly Dictionary<string, object> _placement;
-    private Window? _window;
+    private MainWindow? _window;
+    private ServiceProvider? _container;
+    private GlobalHotkey? _hotkey;
+    private WindowDocking? _docking;
 
     public App()
     {
@@ -30,12 +40,79 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        var viewModel = new HudViewModel(TimeSpan.FromSeconds(20), repoRoot: null, openUri: _ => Task.CompletedTask);
-        var window = new MainWindow(viewModel);
-        if (Environment.GetCommandLineArgs().Contains("--demo")) window.SeedDemo();
-        window.Closed += (_, _) => File.WriteAllText(WindowFile,
-            JsonSerializer.Serialize(_placement.ToDictionary(p => p.Key, p => p.Value.ToString())));
-        _window = window;
+        var (settings, warning) = SettingsStore.Load(SettingsStore.DefaultPath);
+        var viewModel = new HudViewModel(TimeSpan.FromSeconds(settings.AutoExpandSeconds), settings.RepoPath, OpenAsync);
+        _window = new MainWindow(viewModel);
+        _window.Closed += OnClosed;
         _window.Activate();
+        _docking = new WindowDocking(_window);
+        _hotkey = new GlobalHotkey(_window, () => _window.DispatcherQueue.TryEnqueue(() => viewModel.ToggleMuteCommand.Execute(null)));
+
+        var args2 = Environment.GetCommandLineArgs();
+        if (args2.Contains("--pin")) viewModel.ToggleExpandCommand.Execute(null);   // start pinned open (manual testing)
+        if (args2.Contains("--demo"))
+        {
+            _window.SeedDemo();
+            return;
+        }
+        if (warning is not null) viewModel.SetStatus(warning);
+        _ = StartAsync(settings, viewModel);
+    }
+
+    private async Task StartAsync(Settings settings, HudViewModel viewModel)
+    {
+        var window = _window!;
+        void Status(string text) => window.DispatcherQueue.TryEnqueue(() => viewModel.SetStatus($"{ModeLabel(settings)} · {text}"));
+        try
+        {
+            Status("Checking models…");
+            var models = await ModelStore.EnsureAsync(settings.WhisperModel,
+                new Progress<double>(p => Status($"Downloading models… {p:P0}")), CancellationToken.None);
+
+            var services = new ServiceCollection();
+            services.AddLogging(b => b.AddDebug());
+            services.AddPoVoiceHudCore(settings, models);
+            _container = services.BuildServiceProvider();
+
+            var pipeline = _container.GetRequiredService<HudPipeline>();
+            viewModel.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(HudViewModel.IsMuted)) pipeline.IsMuted = viewModel.IsMuted;
+            };
+            if (_hotkey is { Registered: false }) Status("Win+Shift+M is taken by another app — click the dot to mute");
+
+            _ = Drain(pipeline.Status, s => viewModel.SetStatus($"{ModeLabel(settings)} · {s}"));
+            _ = Drain(pipeline.Transcript, viewModel.AddTranscript);
+            _ = Drain(pipeline.Insights, insights => viewModel.Push(insights, DateTimeOffset.Now));
+            pipeline.Start();
+        }
+        catch (Exception e)
+        {
+            Status($"Start failed: {e.Message}");
+        }
+    }
+
+    private async Task Drain<T>(ChannelReader<T> reader, Action<T> apply)
+    {
+        await foreach (var item in reader.ReadAllAsync())
+            _window!.DispatcherQueue.TryEnqueue(() => apply(item));
+    }
+
+    private static string ModeLabel(Settings settings) => settings.Mode == HudMode.Simple
+        ? "Mic · Fact check"
+        : $"{settings.AudioInput} · {settings.EnabledSources}";
+
+    private async Task OpenAsync(Uri uri)
+    {
+        if (!await VsCodeLauncher.OpenAsync(uri))
+            _window?.ViewModel.SetStatus($"Nothing is registered to open {uri.Scheme}:// links");
+    }
+
+    private void OnClosed(object sender, WindowEventArgs args)
+    {
+        File.WriteAllText(WindowFile, JsonSerializer.Serialize(_placement.ToDictionary(p => p.Key, p => p.Value.ToString())));
+        _hotkey?.Dispose();
+        _docking?.Dispose();
+        _container?.Dispose();
     }
 }
