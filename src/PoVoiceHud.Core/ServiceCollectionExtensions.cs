@@ -54,7 +54,7 @@ public static class ServiceCollectionExtensions
                        && (foundryKey is not null || new Uri(settings.FoundryEndpoint!).IsLoopback);
         services.AddSingleton<IInsightProvider>(sp => new FactCheckProvider(
             sp.GetRequiredService<BraveSearch>(),
-            llmReady ? new FoundryClient(sp.GetRequiredService<HttpClient>(), new Uri(settings.FoundryEndpoint!), settings.FoundryModel, () => foundryKey) : null));
+            llmReady ? new FoundryClient(sp.GetRequiredService<HttpClient>(), new Uri(settings.FoundryEndpoint!), settings.FoundryModel, foundryKey) : null));
 
         services.AddSingleton(sp => new Router(
             sp.GetServices<IInsightProvider>(), () => sp.GetService<Workspace.Workspace>()?.Index, () => settings.EnabledSources,

@@ -1,5 +1,4 @@
 using System.Net;
-using Polly;
 using PoVoiceHud.Core.Routing;
 
 namespace PoVoiceHud.Core.Providers.Web;
@@ -10,11 +9,6 @@ namespace PoVoiceHud.Core.Providers.Web;
 /// </summary>
 public sealed class BraveProvider(BraveSearch search) : IInsightProvider
 {
-    public BraveProvider(HttpClient http, Func<string?> apiKey, ResiliencePipeline? pipeline = null)
-        : this(new BraveSearch(http, apiKey, pipeline)) { }
-
-    public static PredicateBuilder<object> Transient => BraveSearch.Transient;
-
     public Intent Handles => Intent.Web;
 
     public async Task<Insight?> QueryAsync(Query query, CancellationToken ct)

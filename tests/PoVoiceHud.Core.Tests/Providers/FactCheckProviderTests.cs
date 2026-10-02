@@ -17,7 +17,7 @@ public class FactCheckProviderTests
     private static readonly Query Statement = new(Claim, [], Intent.FactCheck);
 
     private static readonly ResiliencePipeline NoDelay = new ResiliencePipelineBuilder()
-        .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.Zero, ShouldHandle = BraveProvider.Transient })
+        .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.Zero, ShouldHandle = Resilience.Transient })
         .Build();
 
     private const string SearchResponse = """
@@ -149,7 +149,7 @@ public class FactCheckProviderTests
               "usage": { "prompt_tokens": 120, "completion_tokens": 20, "total_tokens": 140 } }
             """;
         var handler = new FakeHttpHandler(_ => FakeHttpHandler.Json(recorded));
-        var client = new FoundryClient(new HttpClient(handler), new Uri("https://acme.services.ai.azure.com"), "Llama-3.3-70B-Instruct", () => "foundry-key");
+        var client = new FoundryClient(new HttpClient(handler), new Uri("https://acme.services.ai.azure.com"), "Llama-3.3-70B-Instruct", "foundry-key");
 
         var content = await client.CompleteAsync("You are a fact checker. Answer in JSON.", "Claim: x", _ct);
 
@@ -169,7 +169,8 @@ public class FactCheckProviderTests
     {
         const string recorded = """{ "choices": [ { "message": { "role": "assistant", "content": "{\"verdict\":\"unverified\"}" } } ] }""";
         var handler = new FakeHttpHandler(_ => FakeHttpHandler.Json(recorded));
-        var client = new FoundryClient(new HttpClient(handler), new Uri("http://localhost:11434/v1/chat/completions"), "llama3.2", () => null);
+        // A stored Azure key must not be sent to a loopback endpoint.
+        var client = new FoundryClient(new HttpClient(handler), new Uri("http://localhost:11434/v1/chat/completions"), "llama3.2", "azure-key");
 
         var content = await client.CompleteAsync("s", "u", _ct);
 
@@ -196,7 +197,7 @@ public class FactCheckProviderTests
     public async Task Foundry_client_surfaces_http_failures_as_HttpRequestException()
     {
         var client = new FoundryClient(new HttpClient(new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized))),
-            new Uri("https://acme.services.ai.azure.com"), "Llama-3.3-70B-Instruct", () => "bad");
+            new Uri("https://acme.services.ai.azure.com"), "Llama-3.3-70B-Instruct", "bad");
 
         await Assert.ThrowsAsync<HttpRequestException>(() => client.CompleteAsync("s", "u", _ct));
     }

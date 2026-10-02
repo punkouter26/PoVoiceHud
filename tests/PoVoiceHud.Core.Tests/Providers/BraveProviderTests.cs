@@ -14,7 +14,7 @@ public class BraveProviderTests
     private static readonly Query Question = new("what does IAsyncDisposable do again", [], Intent.Web);
 
     private static readonly ResiliencePipeline NoDelay = new ResiliencePipelineBuilder()
-        .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.Zero, ShouldHandle = BraveProvider.Transient })
+        .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.Zero, ShouldHandle = Resilience.Transient })
         .Build();
 
     private const string Response = """
@@ -38,7 +38,7 @@ public class BraveProviderTests
     private static (BraveProvider Provider, FakeHttpHandler Handler) Build(string? key, Func<HttpRequestMessage, HttpResponseMessage> respond)
     {
         var handler = new FakeHttpHandler(respond);
-        return (new BraveProvider(new HttpClient(handler), () => key, NoDelay), handler);
+        return (new BraveProvider(new BraveSearch(new HttpClient(handler), () => key, NoDelay)), handler);
     }
 
     private static HttpResponseMessage Json(string body) => FakeHttpHandler.Json(body);

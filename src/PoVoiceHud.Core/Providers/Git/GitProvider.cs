@@ -10,15 +10,13 @@ public sealed record CommitInfo(string Sha7, string Author, DateTimeOffset When,
 /// <summary>Who last touched the spoken file, from the local .git.</summary>
 public sealed class GitProvider(Func<string?> repoRoot) : IInsightProvider
 {
-    private const double MinScore = 0.8;
-
     public Intent Handles => Intent.Git;
 
     public Task<Insight?> QueryAsync(Query query, CancellationToken ct)
     {
         var root = repoRoot();
         var match = query.Symbols
-            .Where(m => m.Score >= MinScore)
+            .Where(m => m.Score >= SymbolMatcher.Strong)
             .OrderByDescending(m => m.Symbol.Kind == SymbolKind.File)
             .ThenByDescending(m => m.Score)
             .FirstOrDefault();
@@ -35,9 +33,8 @@ public sealed class GitProvider(Func<string?> repoRoot) : IInsightProvider
             ? "."
             : $"; {earlier} earlier {(earlier == 1 ? "change" : "changes")} by {string.Join(", ", history.Skip(1).Select(c => c.Author).Distinct())}.";
 
-        var absolute = Path.Combine(root, match.Symbol.Path.Replace('/', Path.DirectorySeparatorChar));
         return Task.FromResult<Insight?>(new Insight(
-            Intent.Git, $"[GIT] {Path.GetFileName(match.Symbol.Path)}", answer, [new Jump(absolute, 1)], match.Score));
+            Intent.Git, $"[GIT] {Path.GetFileName(match.Symbol.Path)}", answer, [new Jump(match.Symbol.AbsolutePath(root), 1)], match.Score));
     }
 
     public static IReadOnlyList<CommitInfo> History(string root, string relativePath)

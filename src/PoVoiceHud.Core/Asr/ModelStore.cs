@@ -9,8 +9,7 @@ public static class ModelStore
 {
     private const string SileroUrl = "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx";
 
-    public static string Directory { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PoVoiceHud", "models");
+    public static string Directory { get; } = Path.Combine(Config.AppPaths.DataDir, "models");
 
     public static readonly string[] WhisperModels = ["tiny.en", "base.en", "small.en"];
 
@@ -20,19 +19,24 @@ public static class ModelStore
         var whisper = Path.Combine(Directory, $"ggml-{whisperModel}.bin");
         var silero = Path.Combine(Directory, "silero_vad.onnx");
 
-        if (!Present(silero))
-        {
-            using var http = new HttpClient();
-            await using var src = await http.GetStreamAsync(SileroUrl, ct);
-            await SaveAsync(src, silero, progress, ct);
-        }
-        if (!Present(whisper))
-        {
-            await using var src = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(ToGgmlType(whisperModel), cancellationToken: ct);
-            await SaveAsync(src, whisper, progress, ct);
-        }
+        await Task.WhenAll(
+            Present(silero) ? Task.CompletedTask : DownloadSileroAsync(silero, progress, ct),
+            Present(whisper) ? Task.CompletedTask : DownloadWhisperAsync(whisperModel, whisper, progress, ct));
         progress?.Report(1);
         return new ModelPaths(whisper, silero);
+    }
+
+    private static async Task DownloadSileroAsync(string path, IProgress<double>? progress, CancellationToken ct)
+    {
+        using var http = new HttpClient();
+        await using var src = await http.GetStreamAsync(SileroUrl, ct);
+        await SaveAsync(src, path, progress, ct);
+    }
+
+    private static async Task DownloadWhisperAsync(string model, string path, IProgress<double>? progress, CancellationToken ct)
+    {
+        await using var src = await WhisperGgmlDownloader.Default.GetGgmlModelAsync(ToGgmlType(model), cancellationToken: ct);
+        await SaveAsync(src, path, progress, ct);
     }
 
     private static bool Present(string path) => File.Exists(path) && new FileInfo(path).Length > 1_000_000;

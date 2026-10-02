@@ -44,7 +44,7 @@ public static class IntentClassifier
     /// <summary>A claim worth fact-checking: not a question, not a request or instruction.</summary>
     public static bool IsDeclarative(string text) => !IsQuestion(text) && !CommandStarters.Contains(FirstWord(text.Trim()));
 
-    private static string FirstWord(string trimmed) => trimmed.Split(' ', 2)[0].TrimEnd(',', '.');
+    private static string FirstWord(string trimmed) => NoiseFilter.Words().Match(trimmed).Value;
 
     private static Regex Rule(params string[] alternatives) =>
         new(@"\b(?:" + string.Join('|', alternatives) + @")\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);

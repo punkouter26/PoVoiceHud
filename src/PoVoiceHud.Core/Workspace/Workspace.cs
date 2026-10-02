@@ -32,7 +32,20 @@ public sealed class Workspace : IDisposable
 
     public event Action? Changed;
 
-    private void OnFileSystemEvent(object sender, FileSystemEventArgs e) => _debounce.Change(500, Timeout.Infinite);
+    private void OnFileSystemEvent(object sender, FileSystemEventArgs e)
+    {
+        if (IsRelevant(e.FullPath)) _debounce.Change(500, Timeout.Infinite);
+    }
+
+    /// <summary>Builds and fetches churn thousands of files under bin/obj/.git; only tracked-file changes move the index.</summary>
+    private static bool IsRelevant(string fullPath)
+    {
+        var relative = fullPath.Replace('\\', '/');
+        if (relative.EndsWith("/.git/index", StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var noise in new[] { "/.git/", "/bin/", "/obj/", "/node_modules/" })
+            if (relative.Contains(noise, StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
+    }
 
     private void Rebuild()
     {

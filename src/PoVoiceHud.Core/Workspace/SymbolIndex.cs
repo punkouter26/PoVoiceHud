@@ -1,12 +1,19 @@
 using System.Text.RegularExpressions;
 using LibGit2Sharp;
+using PoVoiceHud.Core.Routing;
 
 namespace PoVoiceHud.Core.Workspace;
 
 public enum SymbolKind { File, Entity, Adr }
 
 /// <summary>Something a speaker can name: a tracked file, an EF Core entity, or an ADR title. Path is repo-relative.</summary>
-public sealed record Symbol(string Name, SymbolKind Kind, string Path, int Line = 1);
+public sealed record Symbol(string Name, SymbolKind Kind, string Path, int Line = 1)
+{
+    /// <summary>Lower-cased camel-split name tokens, computed once so matching does no regex work per utterance.</summary>
+    public string[] Tokens { get; } = SymbolMatcher.NameTokens(Name);
+
+    public string AbsolutePath(string root) => System.IO.Path.Combine(root, Path.Replace('/', System.IO.Path.DirectorySeparatorChar));
+}
 
 public sealed partial class SymbolIndex
 {
@@ -23,11 +30,15 @@ public sealed partial class SymbolIndex
             var path = entry.Path;
             symbols.Add(new Symbol(System.IO.Path.GetFileNameWithoutExtension(path), SymbolKind.File, path));
 
+            var isSnapshot = path.EndsWith("ModelSnapshot.cs", StringComparison.OrdinalIgnoreCase);
+            var isDoc = path.StartsWith("docs/", StringComparison.OrdinalIgnoreCase) && path.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
+            if (!isSnapshot && !isDoc) continue;   // only these two kinds need the file read (one stat per entry otherwise)
+
             var full = System.IO.Path.Combine(root, path);
             if (!File.Exists(full)) continue;
-            if (path.EndsWith("ModelSnapshot.cs", StringComparison.OrdinalIgnoreCase))
+            if (isSnapshot)
                 symbols.AddRange(Entities(path, File.ReadLines(full)));
-            else if (path.StartsWith("docs/", StringComparison.OrdinalIgnoreCase) && path.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+            else
             {
                 var title = File.ReadLines(full).FirstOrDefault(l => l.StartsWith("# "));
                 if (title is not null) symbols.Add(new Symbol(title[2..].Trim(), SymbolKind.Adr, path));

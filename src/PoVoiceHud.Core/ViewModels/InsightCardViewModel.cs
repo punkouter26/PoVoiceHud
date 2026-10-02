@@ -6,7 +6,6 @@ namespace PoVoiceHud.Core.ViewModels;
 public sealed partial class JumpItem(Jump jump, string label, Func<Uri, Task> openUri)
 {
     public string Label => label;
-    public Uri Uri => jump.Uri;
 
     [RelayCommand]
     private Task Open() => openUri(jump.Uri);
@@ -15,9 +14,11 @@ public sealed partial class JumpItem(Jump jump, string label, Func<Uri, Task> op
 /// <summary>Headline "[TAG] Title" → Tag/Title; jumps labelled relative to the repo root.</summary>
 public sealed class InsightCardViewModel
 {
+    private readonly Insight _insight;
+
     public InsightCardViewModel(Insight insight, string? repoRoot, Func<Uri, Task> openUri)
     {
-        Insight = insight;
+        _insight = insight;
         var close = insight.Headline.IndexOf(']');
         (Tag, Title) = insight.Headline.StartsWith('[') && close > 0
             ? (insight.Headline[1..close], insight.Headline[(close + 1)..].Trim())
@@ -26,22 +27,16 @@ public sealed class InsightCardViewModel
         OpenLinkCommand = new AsyncRelayCommand(() => insight.Link is null ? Task.CompletedTask : openUri(insight.Link));
     }
 
-    public Insight Insight { get; }
     public string Tag { get; }
     public string Title { get; }
-    public string Answer => Insight.Answer;
-    public string? Stale => Insight.Stale;
-    public bool IsStale => Insight.Stale is not null;
-    public Uri? Link => Insight.Link;
-    public bool HasLink => Insight.Link is not null;
+    public string Answer => _insight.Answer;
+    public string? Stale => _insight.Stale;
+    public bool IsStale => _insight.Stale is not null;
+    public bool HasLink => _insight.Link is not null;
     public IReadOnlyList<JumpItem> Jumps { get; }
     public IAsyncRelayCommand OpenLinkCommand { get; }
 
-    private static string Relative(string path, string? root)
-    {
-        var relative = root is not null && path.StartsWith(root, StringComparison.OrdinalIgnoreCase)
-            ? path[root.Length..].TrimStart('\\', '/')
-            : path;
-        return relative.Replace('\\', '/');
-    }
+    private static string Relative(string path, string? root) =>
+        (root is not null && path.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? Path.GetRelativePath(root, path) : path)
+        .Replace('\\', '/');
 }

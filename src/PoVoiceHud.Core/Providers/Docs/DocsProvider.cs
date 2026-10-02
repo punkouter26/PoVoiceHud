@@ -21,7 +21,7 @@ public sealed class DocsProvider(Func<string?> repoRoot) : IInsightProvider
             .FirstOrDefault();
         if (root is null || match is null) return Task.FromResult<Insight?>(null);
 
-        var absolute = Path.Combine(root, match.Symbol.Path.Replace('/', Path.DirectorySeparatorChar));
+        var absolute = match.Symbol.AbsolutePath(root);
         var adr = AdrParser.Parse(File.ReadAllText(absolute), match.Symbol.Path);
         var answer = (adr.Status, adr.Decision) switch
         {

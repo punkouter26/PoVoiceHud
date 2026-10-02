@@ -6,9 +6,10 @@ namespace PoVoiceHud.Core.Providers.FactCheck;
 /// <summary>
 /// OpenAI-style chat completions. The endpoint is either an Azure AI Foundry resource root
 /// (https://&lt;resource&gt;.services.ai.azure.com → /models/chat/completions?api-version=… is appended, api-key header)
-/// or a full URL such as Ollama's http://localhost:11434/v1/chat/completions (used as-is; no key needed).
+/// or a full URL such as Ollama's http://localhost:11434/v1/chat/completions (used as-is).
+/// The key is never sent to a loopback endpoint, so a stored Azure key stays off the local wire.
 /// </summary>
-public sealed class FoundryClient(HttpClient http, Uri endpoint, string model, Func<string?> apiKey) : ILanguageModel
+public sealed class FoundryClient(HttpClient http, Uri endpoint, string model, string? apiKey) : ILanguageModel
 {
     private const string ApiVersion = "2024-05-01-preview";
 
@@ -34,11 +35,11 @@ public sealed class FoundryClient(HttpClient http, Uri endpoint, string model, F
                 max_tokens = 300,
             }),
         };
-        if (apiKey() is { Length: > 0 } key) request.Headers.Add("api-key", key);
+        if (!string.IsNullOrEmpty(apiKey) && !endpoint.IsLoopback) request.Headers.Add("api-key", apiKey);
 
         using var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
-        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
-        return body.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+        return body.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
     }
 }

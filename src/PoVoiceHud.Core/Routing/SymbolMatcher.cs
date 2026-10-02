@@ -12,28 +12,39 @@ public sealed record SymbolMatch(Symbol Symbol, double Score);
 /// </summary>
 public static partial class SymbolMatcher
 {
+    /// <summary>Score at which a symbol is taken to be what the speaker meant.</summary>
+    public const double Strong = 0.8;
+
     private const int TokenSimilarity = 80;
     private static readonly HashSet<string> Ignored = ["adr", "md", "cs"];
 
     public static IReadOnlyList<SymbolMatch> Match(string text, SymbolIndex index)
     {
-        var spoken = Tokens(text).ToArray();
-        if (spoken.Length == 0) return [];
+        var spoken = Tokens(text).ToHashSet();
+        if (spoken.Count == 0) return [];
 
         var matches = new List<SymbolMatch>();
         foreach (var symbol in index.Symbols)
         {
-            var name = Tokens(symbol.Name).Where(t => !Ignored.Contains(t) && !t.All(char.IsDigit)).ToArray();
-            if (name.Length == 0) continue;
-            var heard = name.Count(n => spoken.Any(s => Fuzz.Ratio(n, s) >= TokenSimilarity));
-            var score = (double)heard / name.Length;
+            if (symbol.Tokens.Length == 0) continue;
+            var heard = symbol.Tokens.Count(n => spoken.Contains(n) || spoken.Any(s => Similar(n, s)));
+            var score = (double)heard / symbol.Tokens.Length;
             if (score >= 0.5) matches.Add(new SymbolMatch(symbol, score));
         }
         return matches.OrderByDescending(m => m.Score).ThenByDescending(m => m.Symbol.Name.Length).Take(5).ToList();
     }
 
-    private static IEnumerable<string> Tokens(string text) =>
+    /// <summary>Camel-case / punctuation split, lower-cased, single characters dropped.</summary>
+    public static IEnumerable<string> Tokens(string text) =>
         Token().Matches(text).Select(m => m.Value.ToLowerInvariant()).Where(t => t.Length > 1);
+
+    /// <summary>Tokens of a symbol name worth matching: no file extensions, no bare numbers.</summary>
+    internal static string[] NameTokens(string name) =>
+        Tokens(name).Where(t => !Ignored.Contains(t) && !t.All(char.IsDigit)).ToArray();
+
+    // Length gate first: a ratio ≥ 80 needs the lengths within ~20 % of each other, which skips most Levenshtein calls.
+    private static bool Similar(string a, string b) =>
+        Math.Abs(a.Length - b.Length) * 5 <= a.Length + b.Length && Fuzz.Ratio(a, b) >= TokenSimilarity;
 
     [GeneratedRegex(@"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")]
     private static partial Regex Token();

@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using Polly;
-using Polly.Retry;
 
 namespace PoVoiceHud.Core.Providers.Web;
 
@@ -18,20 +17,7 @@ public sealed partial class BraveSearch(HttpClient http, Func<string?> apiKey, R
 {
     private const string Endpoint = "https://api.search.brave.com/res/v1/web/search";
 
-    public static readonly PredicateBuilder<object> Transient = new PredicateBuilder()
-        .Handle<HttpRequestException>(e => e.StatusCode is null or HttpStatusCode.TooManyRequests or >= HttpStatusCode.InternalServerError);
-
-    private static readonly ResiliencePipeline Default = new ResiliencePipelineBuilder()
-        .AddRetry(new RetryStrategyOptions
-        {
-            MaxRetryAttempts = 3,
-            Delay = TimeSpan.FromMilliseconds(500),
-            BackoffType = DelayBackoffType.Exponential,
-            ShouldHandle = Transient,
-        })
-        .Build();
-
-    private readonly ResiliencePipeline _pipeline = pipeline ?? Default;
+    private readonly ResiliencePipeline _pipeline = pipeline ?? Resilience.Default;
 
     public bool HasKey => !string.IsNullOrWhiteSpace(apiKey());
 

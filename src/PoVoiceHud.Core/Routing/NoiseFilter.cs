@@ -19,5 +19,5 @@ public static partial class NoiseFilter
     }
 
     [GeneratedRegex(@"[\p{L}']+")]
-    private static partial Regex Words();
+    internal static partial Regex Words();
 }

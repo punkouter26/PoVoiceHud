@@ -8,7 +8,7 @@ public sealed record Utterance(short[] Samples, SourceHint Source, TimeSpan Star
 /// Groups frames into utterances: speech ends after ≥650 ms of silence (7 frames), is hard-cut at 30 s
 /// (Whisper's window), starts 300 ms early (pre-roll) and is dropped when shorter than 300 ms.
 /// </summary>
-public sealed class UtteranceSegmenter(RingBuffer? ring = null)
+public sealed class UtteranceSegmenter
 {
     private const float SpeechThreshold = 0.5f;
     private const int SilenceFrames = 7;
@@ -16,7 +16,7 @@ public sealed class UtteranceSegmenter(RingBuffer? ring = null)
     private const int PreRollSamples = 3 * PcmFrame.SamplesPerFrame;
     private const int MaxSpeechFrames = 300;
 
-    private readonly RingBuffer _ring = ring ?? new RingBuffer(TimeSpan.FromSeconds(60));
+    private readonly RingBuffer _ring = new(TimeSpan.FromSeconds(60));
     private long _speechStart = -1;
     private long _speechEnd;
     private TimeSpan _speechStartTime;

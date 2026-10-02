@@ -15,7 +15,7 @@ public class AzdoProviderTests
     private static readonly Query Question = new("did ci pass on this branch", [], Intent.Pipeline);
 
     private static readonly ResiliencePipeline NoDelay = new ResiliencePipelineBuilder()
-        .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.Zero, ShouldHandle = AzdoProvider.Transient })
+        .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.Zero, ShouldHandle = Resilience.Transient })
         .Build();
 
     private static BuildRun Run(string status = "completed", string? result = "succeeded", string? failedStage = null, DateTimeOffset? start = null) =>

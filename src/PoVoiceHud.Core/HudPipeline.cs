@@ -58,6 +58,7 @@ public sealed class HudPipeline : IDisposable
                     _vad.Reset();
                 }
                 while (_utterances.Reader.TryRead(out _)) { }
+                while (_routing.Reader.TryRead(out _)) { }
             }
             _status.Writer.TryWrite(value ? "Muted" : "Listening");
         }
@@ -66,6 +67,7 @@ public sealed class HudPipeline : IDisposable
     public void Start()
     {
         _ = Task.Run(WorkAsync);
+        _ = Task.Run(RouteAsync);
         _audio.Start();
     }
 
@@ -78,6 +80,9 @@ public sealed class HudPipeline : IDisposable
         }
     }
 
+    // Two stages so a slow provider (LLM, AzDO retries) never delays the next transcription.
+    private readonly Channel<(TranscriptLine Line, int Generation)> _routing = Channel.CreateUnbounded<(TranscriptLine, int)>();
+
     private async Task WorkAsync()
     {
         try
@@ -89,15 +94,37 @@ public sealed class HudPipeline : IDisposable
                 {
                     var text = await _transcriber.TranscribeAsync(utterance.Samples, _cts.Token);
                     if (generation != Volatile.Read(ref _generation) || string.IsNullOrWhiteSpace(text)) continue;
-                    _transcript.Writer.TryWrite(new TranscriptLine(utterance.Source, utterance.Start, text));
-
-                    var insights = await _router.RouteAsync(text, _cts.Token);
-                    if (generation == Volatile.Read(ref _generation) && insights.Count > 0) _insights.Writer.TryWrite(insights);
+                    var line = new TranscriptLine(utterance.Source, utterance.Start, text);
+                    _transcript.Writer.TryWrite(line);
+                    _routing.Writer.TryWrite((line, generation));
                 }
                 catch (Exception e) when (!_cts.IsCancellationRequested)
                 {
                     // Includes HttpClient timeouts (TaskCanceledException): the worker must outlive one bad call.
                     _log.LogError(e, "Utterance at {At} failed", utterance.Start);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // disposed
+        }
+    }
+
+    private async Task RouteAsync()
+    {
+        try
+        {
+            await foreach (var (line, generation) in _routing.Reader.ReadAllAsync(_cts.Token))
+            {
+                try
+                {
+                    var insights = await _router.RouteAsync(line.Text, _cts.Token);
+                    if (generation == Volatile.Read(ref _generation) && insights.Count > 0) _insights.Writer.TryWrite(insights);
+                }
+                catch (Exception e) when (!_cts.IsCancellationRequested)
+                {
+                    _log.LogError(e, "Routing \"{Text}\" failed", line.Text);
                 }
             }
         }

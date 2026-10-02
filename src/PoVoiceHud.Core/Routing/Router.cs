@@ -10,7 +10,6 @@ namespace PoVoiceHud.Core.Routing;
 /// </summary>
 public sealed class Router(IEnumerable<IInsightProvider> providers, Func<SymbolIndex?> index, Func<Intent> enabledSources, ILogger<Router> log)
 {
-    private const double StrongSymbol = 0.8;
     private readonly IInsightProvider[] _providers = providers.ToArray();
 
     public async Task<IReadOnlyList<Insight>> RouteAsync(string text, CancellationToken ct)
@@ -20,7 +19,7 @@ public sealed class Router(IEnumerable<IInsightProvider> providers, Func<SymbolI
         var enabled = enabledSources();
         var intents = IntentClassifier.Classify(text) & enabled;
         var symbols = index() is { } current ? SymbolMatcher.Match(text, current) : [];
-        if (intents == Intent.None && enabled.HasFlag(Intent.Web) && IntentClassifier.IsQuestion(text) && !symbols.Any(s => s.Score >= StrongSymbol))
+        if (intents == Intent.None && enabled.HasFlag(Intent.Web) && IntentClassifier.IsQuestion(text) && !symbols.Any(s => s.Score >= SymbolMatcher.Strong))
             intents = Intent.Web;
         if (enabled.HasFlag(Intent.FactCheck) && IntentClassifier.IsDeclarative(text))
             intents |= Intent.FactCheck;

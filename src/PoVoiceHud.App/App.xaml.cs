@@ -14,10 +14,7 @@ namespace PoVoiceHud.App;
 
 public partial class App : Application
 {
-    public static readonly string DataDir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PoVoiceHud");
-
-    private static readonly string WindowFile = Path.Combine(DataDir, "window.json");
+    private static readonly string WindowFile = Path.Combine(AppPaths.DataDir, "window.json");
 
     // WinUIEx persists window placement through this dictionary (string values only);
     // unpackaged apps have no ApplicationData, so we back it with a JSON file.
@@ -30,10 +27,10 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
-        Directory.CreateDirectory(DataDir);
+        Directory.CreateDirectory(AppPaths.DataDir);
         UnhandledException += (_, e) =>
         {
-            File.AppendAllText(Path.Combine(DataDir, "crash.log"), $"{DateTimeOffset.Now:O} {e.Exception}\n\n");
+            File.AppendAllText(Path.Combine(AppPaths.DataDir, "crash.log"), $"{DateTimeOffset.Now:O} {e.Exception}\n\n");
             e.Handled = true;
         };
         Dictionary<string, string>? saved = null;
@@ -94,8 +91,12 @@ public partial class App : Application
             services.AddPoVoiceHudCore(settings, models);
             _container = services.BuildServiceProvider();
 
-            // Resolving the pipeline loads Whisper (seconds for small.en): keep it off the UI thread.
-            var pipeline = await Task.Run(() => _container.GetRequiredService<HudPipeline>());
+            // Resolving the pipeline loads Whisper (seconds for small.en) and the workspace walks the repo: keep both off the UI thread.
+            var pipeline = await Task.Run(() =>
+            {
+                _ = _container.GetService<Core.Workspace.Workspace>();
+                return _container.GetRequiredService<HudPipeline>();
+            });
             pipeline.IsMuted = viewModel.IsMuted;   // the user may have muted during the download
             viewModel.PropertyChanged += (_, e) =>
             {
@@ -131,9 +132,10 @@ public partial class App : Application
         return (await picker.PickSingleFolderAsync())?.Path;
     }
 
+    /// <summary>vscode://file/{path}:{line} and https links go through the shell; VS Code focuses the line itself.</summary>
     private async Task OpenAsync(Uri uri)
     {
-        if (!await VsCodeLauncher.OpenAsync(uri))
+        if (!await Windows.System.Launcher.LaunchUriAsync(uri))
             _window?.ViewModel.SetStatus($"Nothing is registered to open {uri.Scheme}:// links");
     }
 

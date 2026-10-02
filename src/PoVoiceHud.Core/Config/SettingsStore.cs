@@ -10,8 +10,7 @@ public static class SettingsStore
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
     };
 
-    public static string DefaultPath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PoVoiceHud", "settings.json");
+    public static string DefaultPath { get; } = Path.Combine(AppPaths.DataDir, "settings.json");
 
     public static (Settings Settings, string? Warning) Load(string path)
     {

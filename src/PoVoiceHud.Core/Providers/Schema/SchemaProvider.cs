@@ -5,9 +5,8 @@ using PoVoiceHud.Core.Workspace;
 namespace PoVoiceHud.Core.Providers.Schema;
 
 /// <summary>Answers table/column questions from the EF Core model snapshot the symbol index pointed at.</summary>
-public sealed partial class SchemaProvider(Func<string?> repoRoot) : IInsightProvider
+public sealed class SchemaProvider(Func<string?> repoRoot) : IInsightProvider
 {
-    private const double MinScore = 0.8;
     private readonly Dictionary<string, (DateTime Stamp, SchemaModel Model)> _cache = [];
 
     public Intent Handles => Intent.Schema;
@@ -15,10 +14,10 @@ public sealed partial class SchemaProvider(Func<string?> repoRoot) : IInsightPro
     public Task<Insight?> QueryAsync(Query query, CancellationToken ct)
     {
         var root = repoRoot();
-        var candidates = query.Symbols.Where(m => m.Score >= MinScore && m.Symbol.Kind == SymbolKind.Entity).ToList();
+        var candidates = query.Symbols.Where(m => m.Score >= SymbolMatcher.Strong && m.Symbol.Kind == SymbolKind.Entity).ToList();
         if (root is null || candidates.Count == 0) return Task.FromResult<Insight?>(null);
 
-        var spoken = Tokens(query.Text);
+        var spoken = SymbolMatcher.Tokens(query.Text).ToHashSet();
         // Subject = the entity whose column covers the most spoken tokens ("tenant id" → Inspection.TenantId beats Tenant.Id),
         // falling back to the entity named earliest in the sentence.
         var best = candidates
@@ -45,10 +44,10 @@ public sealed partial class SchemaProvider(Func<string?> repoRoot) : IInsightPro
         var source = query.Symbols.FirstOrDefault(m => m.Symbol.Kind == SymbolKind.File && m.Symbol.Name == entity.Name)?.Symbol;
         if (source is not null)
         {
-            var sourcePath = Absolute(root, source.Path);
+            var sourcePath = source.AbsolutePath(root);
             jumps.Add(new Jump(sourcePath, column is null ? 1 : LineOf(sourcePath, column.Name)));
         }
-        jumps.Add(new Jump(Absolute(root, model.Path), line));
+        jumps.Add(new Jump(match.Symbol.AbsolutePath(root), line));
 
         return Task.FromResult<Insight?>(new Insight(Intent.Schema, headline, answer, jumps, match.Score));
     }
@@ -91,7 +90,7 @@ public sealed partial class SchemaProvider(Func<string?> repoRoot) : IInsightPro
 
     private SchemaModel Load(string root, string relativePath)
     {
-        var path = Absolute(root, relativePath);
+        var path = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
         var stamp = File.GetLastWriteTimeUtc(path);
         lock (_cache)
         {
@@ -101,9 +100,6 @@ public sealed partial class SchemaProvider(Func<string?> repoRoot) : IInsightPro
             return model;
         }
     }
-
-    private static string Absolute(string root, string relativePath) =>
-        Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
 
     private static int LineOf(string path, string identifier)
     {
@@ -117,14 +113,11 @@ public sealed partial class SchemaProvider(Func<string?> repoRoot) : IInsightPro
         return 1;
     }
 
-    private static HashSet<string> Tokens(string text) =>
-        Token().Matches(text).Select(m => m.Value.ToLowerInvariant()).ToHashSet();
-
     /// <summary>Number of the column's camel-case tokens heard, or 0 unless all of them were.</summary>
     private static int Coverage(HashSet<string> spoken, string columnName)
     {
-        var tokens = Token().Matches(columnName).Select(m => m.Value.ToLowerInvariant()).ToArray();
-        return tokens.All(spoken.Contains) ? tokens.Length : 0;
+        var tokens = SymbolMatcher.Tokens(columnName).ToArray();
+        return tokens.Length > 0 && tokens.All(spoken.Contains) ? tokens.Length : 0;
     }
 
     private static int Position(string text, string name)
@@ -132,7 +125,4 @@ public sealed partial class SchemaProvider(Func<string?> repoRoot) : IInsightPro
         var at = text.IndexOf(name, StringComparison.OrdinalIgnoreCase);
         return at < 0 ? int.MaxValue : at;
     }
-
-    [GeneratedRegex(@"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")]
-    private static partial Regex Token();
 }

@@ -1,9 +1,7 @@
-using System.Net;
 using Humanizer;
 using LibGit2Sharp;
 using Microsoft.VisualStudio.Services.Common;
 using Polly;
-using Polly.Retry;
 using PoVoiceHud.Core.Routing;
 
 namespace PoVoiceHud.Core.Providers.Pipeline;
@@ -11,20 +9,7 @@ namespace PoVoiceHud.Core.Providers.Pipeline;
 /// <summary>Latest pipeline run for the repo's current branch, with transient-failure retries.</summary>
 public sealed class AzdoProvider(IBuildClient client, Func<string?> repoRoot, ResiliencePipeline? pipeline = null) : IInsightProvider
 {
-    public static readonly PredicateBuilder<object> Transient = new PredicateBuilder()
-        .Handle<HttpRequestException>(e => e.StatusCode is null or HttpStatusCode.TooManyRequests or >= HttpStatusCode.InternalServerError);
-
-    private static readonly ResiliencePipeline Default = new ResiliencePipelineBuilder()
-        .AddRetry(new RetryStrategyOptions
-        {
-            MaxRetryAttempts = 3,
-            Delay = TimeSpan.FromMilliseconds(500),
-            BackoffType = DelayBackoffType.Exponential,
-            ShouldHandle = Transient,
-        })
-        .Build();
-
-    private readonly ResiliencePipeline _pipeline = pipeline ?? Default;
+    private readonly ResiliencePipeline _pipeline = pipeline ?? Resilience.Default;
 
     public Intent Handles => Intent.Pipeline;
 
