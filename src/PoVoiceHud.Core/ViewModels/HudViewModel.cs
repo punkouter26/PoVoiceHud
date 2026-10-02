@@ -24,7 +24,11 @@ public sealed partial class HudViewModel(TimeSpan autoExpand, string? repoRoot, 
     [ObservableProperty] private string _headline = "PoVoiceHud — listening";
     [ObservableProperty] private string _statusText = "Starting…";
     [ObservableProperty] private string _muteHint = "Mute: Win+Shift+M";
-    [ObservableProperty] private InsightCardViewModel? _focus;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasFocus), nameof(NoFocus))] private InsightCardViewModel? _focus;
+    [ObservableProperty] private double _micLevel;
+
+    public bool HasFocus => Focus is not null;
+    public bool NoFocus => Focus is null;
 
     public ObservableCollection<InsightCardViewModel> Shelf { get; } = [];
     public ObservableCollection<TranscriptLine> Transcript { get; } = [];

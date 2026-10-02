@@ -29,6 +29,7 @@
         <Grid Padding="12,0" ColumnSpacing="10" Background="Transparent" Tapped="Pill_Tapped">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
@@ -36,17 +37,22 @@
             <Button Background="Transparent" BorderThickness="0" Padding="4" Command="{x:Bind ViewModel.ToggleMuteCommand}" ToolTipService.ToolTip="{x:Bind ViewModel.MuteHint, Mode=OneWay}">
                 <Ellipse x:Name="RecDot" Width="10" Height="10" Fill="{x:Bind local:MainWindow.RecBrush(ViewModel.IsMuted), Mode=OneWay}" />
             </Button>
-            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" VerticalAlignment="Center"
+            <!-- Mic level: fills left→right from −60 dBFS to 0 dBFS, updated every 100 ms -->
+            <ProgressBar Grid.Column="1" Width="64" Height="6" Minimum="0" Maximum="1" VerticalAlignment="Center"
+                         Value="{x:Bind ViewModel.MicLevel, Mode=OneWay}" ToolTipService.ToolTip="Mic level" />
+            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" VerticalAlignment="Center"
                        FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-            <Button Grid.Column="2" Command="{x:Bind ViewModel.ToggleExpandCommand}" Background="Transparent" BorderThickness="0"
+            <Button Grid.Column="3" Command="{x:Bind ViewModel.ToggleExpandCommand}" Background="Transparent" BorderThickness="0"
                     Padding="6,2" Content="{x:Bind local:MainWindow.ExpandGlyph(ViewModel.IsExpanded), Mode=OneWay}" FontSize="12" />
-            <Button Grid.Column="3" x:Name="SettingsButton" Background="Transparent" BorderThickness="0" Padding="6,2" Content="⚙" FontSize="13" />
+            <Button Grid.Column="4" x:Name="SettingsButton" Background="Transparent" BorderThickness="0" Padding="6,2" Content="⚙" FontSize="13" />
         </Grid>
 
         <!-- Expanded stack -->
         <StackPanel Grid.Row="1" x:Name="Expanded" Visibility="{x:Bind ViewModel.IsExpanded, Mode=OneWay}" Padding="8,0,8,10" Spacing="8">
             <views:StatusBar ViewModel="{x:Bind ViewModel}" />
-            <views:FocusCard Card="{x:Bind ViewModel.Focus, Mode=OneWay}" />
+            <views:FocusCard Card="{x:Bind ViewModel.Focus, Mode=OneWay}" Visibility="{x:Bind ViewModel.HasFocus, Mode=OneWay}" />
+            <TextBlock Text="Say a full sentence that states a fact — it will be checked here." Visibility="{x:Bind ViewModel.NoFocus, Mode=OneWay}"
+                       FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="4,8" />
             <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled">
                 <ItemsRepeater ItemsSource="{x:Bind ViewModel.Shelf}">
                     <ItemsRepeater.Layout>

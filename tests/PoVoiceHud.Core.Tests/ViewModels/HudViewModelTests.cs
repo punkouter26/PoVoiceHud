@@ -35,6 +35,25 @@ public class HudViewModelTests
     }
 
     [Fact]
+    public void HasFocus_follows_the_focus_card()
+    {
+        Assert.False(_vm.HasFocus);
+        _vm.Push([Card("[FACT] x")], T0);
+        Assert.True(_vm.HasFocus);
+    }
+
+    [Theory]
+    [InlineData(0, 0.0)]          // silence
+    [InlineData(32767, 1.0)]      // full scale
+    [InlineData(1036, 0.5)]       // -30 dBFS ≈ normal speech → mid-scale
+    public void Mic_level_maps_rms_to_a_0_to_1_db_scale(short amplitude, double expected)
+    {
+        var frame = new short[160];
+        Array.Fill(frame, amplitude);
+        Assert.Equal(expected, HudPipeline.LevelOf(frame), 2);
+    }
+
+    [Fact]
     public void Low_confidence_insight_updates_the_pill_without_expanding()
     {
         _vm.Push([Card("[AZDO] Pipelines", 0.3)], T0);

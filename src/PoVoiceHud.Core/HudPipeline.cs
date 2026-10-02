@@ -71,11 +71,27 @@ public sealed class HudPipeline : IDisposable
         _audio.Start();
     }
 
+    /// <summary>Latest frame loudness on a 0–1 scale (−60 dBFS → 0, 0 dBFS → 1); 0 while muted. For the mic meter.</summary>
+    public float Level { get; private set; }
+
+    public static float LevelOf(ReadOnlySpan<short> samples)
+    {
+        double sum = 0;
+        foreach (var s in samples) sum += (double)s * s;
+        var rms = Math.Sqrt(sum / Math.Max(1, samples.Length)) / short.MaxValue;
+        return rms <= 0 ? 0 : (float)Math.Clamp((20 * Math.Log10(rms) + 60) / 60, 0, 1);
+    }
+
     private void OnFrame(PcmFrame frame)
     {
         lock (_vadGate)
         {
-            if (_audio.IsMuted) return;
+            if (_audio.IsMuted)
+            {
+                Level = 0;
+                return;
+            }
+            Level = LevelOf(frame.Samples.Span);
             _segmenter.Push(frame, _vad.Process(frame.Samples.Span));
         }
     }

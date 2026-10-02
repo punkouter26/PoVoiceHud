@@ -103,6 +103,11 @@ public partial class App : Application
                 if (e.PropertyName == nameof(HudViewModel.IsMuted)) pipeline.IsMuted = viewModel.IsMuted;
             };
 
+            var meter = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+            meter.Tick += (_, _) => viewModel.MicLevel = pipeline.Level;
+            meter.Start();
+            window.Closed += (_, _) => meter.Stop();
+
             _ = Drain(pipeline.Status, s => viewModel.SetStatus($"{ModeLabel(settings)} · {s}"));
             _ = Drain(pipeline.Transcript, viewModel.AddTranscript);
             _ = Drain(pipeline.Insights, insights => viewModel.Push(insights, DateTimeOffset.Now));
