@@ -7,6 +7,7 @@ using PoVoiceHud.Core.Audio;
 using PoVoiceHud.Core.Config;
 using PoVoiceHud.Core.Providers;
 using PoVoiceHud.Core.Providers.Docs;
+using PoVoiceHud.Core.Providers.FactCheck;
 using PoVoiceHud.Core.Providers.Fakes;
 using PoVoiceHud.Core.Providers.Git;
 using PoVoiceHud.Core.Providers.Pipeline;
@@ -27,7 +28,7 @@ public static class ServiceCollectionExtensions
         if (settings.RepoPath is { } root && Repository.IsValid(root))
             services.AddSingleton(_ => new Workspace.Workspace(root));
 
-        services.TryAddSingleton<IAudioSource, WasapiDualCapture>();
+        services.TryAddSingleton<IAudioSource>(_ => new WasapiDualCapture(settings.AudioInput));
         services.TryAddSingleton(_ => new SileroVad(models.Silero));
         services.TryAddSingleton<ITranscriber>(_ => new WhisperTranscriber(models.Whisper, settings.WhisperThreads));
 
@@ -43,8 +44,15 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IInsightProvider>(FakeProvider.Unconfigured(Intent.Pipeline, "Add your Azure DevOps org, project and PAT in Settings."));
 
         services.AddSingleton(new HttpClient());
-        services.AddSingleton<IInsightProvider>(sp =>
-            new BraveProvider(sp.GetRequiredService<HttpClient>(), () => CredentialStore.Read(CredentialStore.BraveKey)));
+        services.AddSingleton(sp => new BraveSearch(sp.GetRequiredService<HttpClient>(), () => CredentialStore.Read(CredentialStore.BraveKey)));
+        services.AddSingleton<IInsightProvider>(sp => new BraveProvider(sp.GetRequiredService<BraveSearch>()));
+
+        var foundryKey = CredentialStore.Read(CredentialStore.FoundryKey);
+        services.AddSingleton<IInsightProvider>(sp => new FactCheckProvider(
+            sp.GetRequiredService<BraveSearch>(),
+            Uri.TryCreate(settings.FoundryEndpoint, UriKind.Absolute, out var foundry) && foundryKey is not null
+                ? new FoundryClient(sp.GetRequiredService<HttpClient>(), foundry, settings.FoundryModel, () => foundryKey)
+                : null));
 
         services.AddSingleton(sp => new Router(
             sp.GetServices<IInsightProvider>(), () => sp.GetService<Workspace.Workspace>()?.Index, () => settings.EnabledSources,

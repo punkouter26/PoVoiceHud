@@ -4,37 +4,52 @@ using NAudio.Wave.SampleProviders;
 namespace PoVoiceHud.Core.Audio;
 
 /// <summary>
-/// Pull graph: loopback + mic byte streams → per-input RMS tap → mono → 16 kHz → mix → PCM16 frames.
-/// Starved inputs read as silence, so frames keep flowing when nobody is talking.
+/// Pull graph: loopback and/or mic byte streams → per-input RMS tap → mono → 16 kHz → mix → PCM16 frames.
+/// A null format means that input is not captured. Starved inputs read as silence, so frames keep flowing.
 /// </summary>
 public sealed class MixGraph
 {
     private const float AudibleRms = 0.001f;
 
-    private readonly BufferedWaveProvider _loop;
-    private readonly BufferedWaveProvider _mic;
-    private readonly RmsTap _loopTap;
-    private readonly RmsTap _micTap;
+    private readonly BufferedWaveProvider? _loop;
+    private readonly BufferedWaveProvider? _mic;
+    private readonly RmsTap? _loopTap;
+    private readonly RmsTap? _micTap;
     private readonly MixingSampleProvider _mixer;
     private readonly float[] _floats = new float[PcmFrame.SamplesPerFrame];
     private long _frames;
 
-    public MixGraph(WaveFormat loopFormat, WaveFormat micFormat)
+    public MixGraph(WaveFormat? loopFormat, WaveFormat? micFormat)
     {
-        _loop = Buffer(loopFormat);
-        _mic = Buffer(micFormat);
-        _loopTap = new RmsTap(_loop.ToSampleProvider());
-        _micTap = new RmsTap(_mic.ToSampleProvider());
+        if (loopFormat is null && micFormat is null) throw new ArgumentException("At least one input is required.");
         _mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(PcmFrame.SampleRate, 1)) { ReadFully = true };
-        _mixer.AddMixerInput(To16kMono(_loopTap));
-        _mixer.AddMixerInput(To16kMono(_micTap));
+        if (loopFormat is not null)
+        {
+            _loop = Buffer(loopFormat);
+            _loopTap = new RmsTap(_loop.ToSampleProvider());
+            _mixer.AddMixerInput(To16kMono(_loopTap));
+        }
+        if (micFormat is not null)
+        {
+            _mic = Buffer(micFormat);
+            _micTap = new RmsTap(_mic.ToSampleProvider());
+            _mixer.AddMixerInput(To16kMono(_micTap));
+        }
     }
 
-    public TimeSpan Buffered => _loop.BufferedDuration > _mic.BufferedDuration ? _loop.BufferedDuration : _mic.BufferedDuration;
+    public TimeSpan Buffered
+    {
+        get
+        {
+            var loop = _loop?.BufferedDuration ?? TimeSpan.Zero;
+            var mic = _mic?.BufferedDuration ?? TimeSpan.Zero;
+            return loop > mic ? loop : mic;
+        }
+    }
 
-    public void AddLoopback(byte[] buffer, int? count = null) => _loop.AddSamples(buffer, 0, count ?? buffer.Length);
+    public void AddLoopback(byte[] buffer, int? count = null) => _loop?.AddSamples(buffer, 0, count ?? buffer.Length);
 
-    public void AddMic(byte[] buffer, int? count = null) => _mic.AddSamples(buffer, 0, count ?? buffer.Length);
+    public void AddMic(byte[] buffer, int? count = null) => _mic?.AddSamples(buffer, 0, count ?? buffer.Length);
 
     public PcmFrame ReadFrame()
     {
@@ -42,7 +57,8 @@ public sealed class MixGraph
         var pcm = new short[PcmFrame.SamplesPerFrame];
         SampleConvert.ToPcm16(_floats, pcm);
 
-        var (loop, mic) = (_loopTap.TakeRms(), _micTap.TakeRms());
+        var loop = _loopTap?.TakeRms() ?? 0f;
+        var mic = _micTap?.TakeRms() ?? 0f;
         var source = loop > AudibleRms && loop > mic * 1.5f ? SourceHint.Teams
                    : mic > AudibleRms && mic > loop * 1.5f ? SourceHint.Mic
                    : SourceHint.Unknown;
@@ -51,8 +67,8 @@ public sealed class MixGraph
 
     public void Clear()
     {
-        _loop.ClearBuffer();
-        _mic.ClearBuffer();
+        _loop?.ClearBuffer();
+        _mic?.ClearBuffer();
     }
 
     private static BufferedWaveProvider Buffer(WaveFormat format) => new(format)

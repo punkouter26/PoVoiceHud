@@ -1,11 +1,15 @@
 using NAudio.CoreAudioApi;
 using NAudio.CoreAudioApi.Interfaces;
 using NAudio.Wave;
+using PoVoiceHud.Core.Config;
 
 namespace PoVoiceHud.Core.Audio;
 
-/// <summary>Default communications render (loopback) + capture (mic) devices, re-bound when Windows changes them.</summary>
-public sealed class WasapiDualCapture : IAudioSource, IMMNotificationClient
+/// <summary>
+/// Default communications render (loopback) and/or capture (mic) devices per <see cref="AudioInput"/>,
+/// re-bound when Windows changes them.
+/// </summary>
+public sealed class WasapiDualCapture(AudioInput input = AudioInput.Both) : IAudioSource, IMMNotificationClient
 {
     private readonly object _gate = new();
     private readonly MMDeviceEnumerator _devices = new();
@@ -19,7 +23,22 @@ public sealed class WasapiDualCapture : IAudioSource, IMMNotificationClient
     public event Action<PcmFrame>? FrameAvailable;
     public event Action<string>? Status;
 
-    public WasapiDualCapture() => _devices.RegisterEndpointNotificationCallback(this);
+    /// <summary>Which endpoints an input selection opens: (loopback, mic).</summary>
+    public static (bool Loopback, bool Mic) DevicesFor(AudioInput input) => input switch
+    {
+        AudioInput.Mic => (false, true),
+        AudioInput.Remote => (true, false),
+        _ => (true, true),
+    };
+
+    private bool _registered;
+
+    private void EnsureRegistered()
+    {
+        if (_registered) return;
+        _devices.RegisterEndpointNotificationCallback(this);
+        _registered = true;
+    }
 
     public bool IsMuted
     {
@@ -39,6 +58,7 @@ public sealed class WasapiDualCapture : IAudioSource, IMMNotificationClient
     {
         lock (_gate)
         {
+            EnsureRegistered();
             _running = true;
             if (!_muted) Open();
         }
@@ -58,16 +78,17 @@ public sealed class WasapiDualCapture : IAudioSource, IMMNotificationClient
         Close();
         try
         {
-            _loop = new WasapiLoopbackCapture(_devices.GetDefaultAudioEndpoint(DataFlow.Render, Role.Communications));
-            _mic = new WasapiCapture(_devices.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications));
-            var graph = new MixGraph(_loop.WaveFormat, _mic.WaveFormat);
-            _loop.DataAvailable += (_, e) => graph.AddLoopback(e.Buffer, e.BytesRecorded);
-            _mic.DataAvailable += (_, e) => graph.AddMic(e.Buffer, e.BytesRecorded);
+            var (useLoopback, useMic) = DevicesFor(input);
+            if (useLoopback) _loop = new WasapiLoopbackCapture(_devices.GetDefaultAudioEndpoint(DataFlow.Render, Role.Communications));
+            if (useMic) _mic = new WasapiCapture(_devices.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications));
+            var graph = new MixGraph(_loop?.WaveFormat, _mic?.WaveFormat);
+            if (_loop is not null) _loop.DataAvailable += (_, e) => graph.AddLoopback(e.Buffer, e.BytesRecorded);
+            if (_mic is not null) _mic.DataAvailable += (_, e) => graph.AddMic(e.Buffer, e.BytesRecorded);
             _graph = graph;
-            _loop.StartRecording();
-            _mic.StartRecording();
+            _loop?.StartRecording();
+            _mic?.StartRecording();
             _timer = new Timer(_ => Tick(), null, PcmFrame.Duration, PcmFrame.Duration);
-            Status?.Invoke("Listening");
+            Status?.Invoke(input switch { AudioInput.Mic => "Listening (mic)", AudioInput.Remote => "Listening (remote)", _ => "Listening" });
         }
         catch (Exception e)
         {
@@ -115,7 +136,7 @@ public sealed class WasapiDualCapture : IAudioSource, IMMNotificationClient
     public void Dispose()
     {
         Stop();
-        _devices.UnregisterEndpointNotificationCallback(this);
+        if (_registered) _devices.UnregisterEndpointNotificationCallback(this);
         _devices.Dispose();
     }
 }

@@ -69,6 +69,27 @@ public class MixGraphTests
         Assert.All(frames.Skip(5), f => Assert.Equal(0, Rms(f.Samples.Span)));
     }
 
+    [Theory]
+    [InlineData(PoVoiceHud.Core.Config.AudioInput.Mic, false, true)]
+    [InlineData(PoVoiceHud.Core.Config.AudioInput.Remote, true, false)]
+    [InlineData(PoVoiceHud.Core.Config.AudioInput.Both, true, true)]
+    public void Capture_opens_only_the_selected_devices(PoVoiceHud.Core.Config.AudioInput input, bool loopback, bool mic)
+    {
+        Assert.Equal((loopback, mic), WasapiDualCapture.DevicesFor(input));
+    }
+
+    [Fact]
+    public void Mic_only_graph_hints_mic_for_everything_audible()
+    {
+        var graph = new MixGraph(loopFormat: null, Mic44kMono16);
+        graph.AddMic(Tone(Mic44kMono16, 0.5, 0.5));
+
+        var frame = graph.ReadFrame();
+
+        Assert.Equal(SourceHint.Mic, frame.Source);
+        Assert.True(Rms(frame.Samples.Span) > 1000);
+    }
+
     [Fact]
     public void Clear_drops_everything_buffered()
     {

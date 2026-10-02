@@ -142,10 +142,31 @@ public class HudPipelineTests
         await using var container = services.BuildServiceProvider();
 
         var providers = container.GetRequiredService<IEnumerable<IInsightProvider>>().ToList();
-        Assert.Equal(5, providers.Count);
+        Assert.Equal(6, providers.Count);
         Assert.IsType<FakeProvider>(providers.Single(p => p.Handles == Intent.Pipeline));
         Assert.Contains(providers, p => p is SchemaProvider);
+        Assert.Contains(providers, p => p is Core.Providers.FactCheck.FactCheckProvider);
         Assert.NotNull(container.GetRequiredService<HudPipeline>());
         Assert.NotNull(container.GetRequiredService<Core.Workspace.Workspace>());
+    }
+
+    [Fact]
+    public async Task Simple_mode_container_needs_no_repo_and_routes_statements_to_fact_check()
+    {
+        await SileroVadTests.EnsureModelAsync();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAudioSource>(new FakeAudioSource([], TimeSpan.Zero));
+        services.AddSingleton<ITranscriber>(new GatedTranscriber(""));
+        services.AddPoVoiceHudCore(new Settings(), new ModelPaths("unused", SileroVadTests.ModelPath));
+        await using var container = services.BuildServiceProvider();
+
+        Assert.Null(container.GetService<Core.Workspace.Workspace>());
+        var router = container.GetRequiredService<Router>();
+        var insights = await router.RouteAsync("The Eiffel Tower was completed in 1889", _ct);
+
+        var card = Assert.Single(insights);
+        Assert.Equal(Intent.FactCheck, card.Intent);
+        Assert.StartsWith("⚠️ Unverified (no LLM configured)", card.Answer);   // no Brave key, no Foundry endpoint in this test
+        Assert.Empty(await router.RouteAsync("who modified the invoice service last week", _ct));
     }
 }
