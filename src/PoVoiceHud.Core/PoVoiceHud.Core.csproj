@@ -16,5 +16,7 @@
     <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Markdig" />
+    <PackageReference Include="Microsoft.TeamFoundationServer.Client" />
+    <PackageReference Include="Polly.Core" />
   </ItemGroup>
 </Project>
