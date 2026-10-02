@@ -47,12 +47,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(sp => new BraveSearch(sp.GetRequiredService<HttpClient>(), () => CredentialStore.Read(CredentialStore.BraveKey)));
         services.AddSingleton<IInsightProvider>(sp => new BraveProvider(sp.GetRequiredService<BraveSearch>()));
 
+        // A key is required for a cloud endpoint; a local (loopback) endpoint such as Ollama needs none.
         var foundryKey = CredentialStore.Read(CredentialStore.FoundryKey);
+        var llmReady = FoundryClient.IsValidEndpoint(settings.FoundryEndpoint)
+                       && (foundryKey is not null || new Uri(settings.FoundryEndpoint!).IsLoopback);
         services.AddSingleton<IInsightProvider>(sp => new FactCheckProvider(
             sp.GetRequiredService<BraveSearch>(),
-            Uri.TryCreate(settings.FoundryEndpoint, UriKind.Absolute, out var foundry) && foundryKey is not null
-                ? new FoundryClient(sp.GetRequiredService<HttpClient>(), foundry, settings.FoundryModel, () => foundryKey)
-                : null));
+            llmReady ? new FoundryClient(sp.GetRequiredService<HttpClient>(), new Uri(settings.FoundryEndpoint!), settings.FoundryModel, () => foundryKey) : null));
 
         services.AddSingleton(sp => new Router(
             sp.GetServices<IInsightProvider>(), () => sp.GetService<Workspace.Workspace>()?.Index, () => settings.EnabledSources,

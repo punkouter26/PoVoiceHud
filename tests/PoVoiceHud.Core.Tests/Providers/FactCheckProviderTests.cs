@@ -165,6 +165,34 @@ public class FactCheckProviderTests
     }
 
     [Fact]
+    public async Task A_full_chat_completions_url_such_as_ollama_is_used_as_is_without_a_key_header()
+    {
+        const string recorded = """{ "choices": [ { "message": { "role": "assistant", "content": "{\"verdict\":\"unverified\"}" } } ] }""";
+        var handler = new FakeHttpHandler(_ => FakeHttpHandler.Json(recorded));
+        var client = new FoundryClient(new HttpClient(handler), new Uri("http://localhost:11434/v1/chat/completions"), "llama3.2", () => null);
+
+        var content = await client.CompleteAsync("s", "u", _ct);
+
+        Assert.Equal("""{"verdict":"unverified"}""", content);
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("http://localhost:11434/v1/chat/completions", request.RequestUri?.ToString());
+        Assert.False(request.Headers.Contains("api-key"));
+        using var body = JsonDocument.Parse(handler.Bodies.Single());
+        Assert.Equal("llama3.2", body.RootElement.GetProperty("model").GetString());
+    }
+
+    [Theory]
+    [InlineData("https://acme.services.ai.azure.com", true)]
+    [InlineData("https://acme.services.ai.azure.com/", true)]
+    [InlineData("http://localhost:11434/v1/chat/completions", true)]
+    [InlineData("http://acme.example.com", false)]
+    [InlineData("acme", false)]
+    public void Endpoint_validation_allows_https_anywhere_and_http_only_on_localhost(string endpoint, bool valid)
+    {
+        Assert.Equal(valid, FoundryClient.IsValidEndpoint(endpoint));
+    }
+
+    [Fact]
     public async Task Foundry_client_surfaces_http_failures_as_HttpRequestException()
     {
         var client = new FoundryClient(new HttpClient(new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized))),
