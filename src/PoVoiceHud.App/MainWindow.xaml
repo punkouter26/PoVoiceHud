@@ -1,0 +1,29 @@
+<winuiex:WindowEx
+    x:Class="PoVoiceHud.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:winuiex="using:WinUIEx"
+    Title="PoVoiceHud"
+    IsAlwaysOnTop="True"
+    IsTitleBarVisible="False"
+    IsResizable="False"
+    IsMaximizable="False"
+    IsMinimizable="False"
+    MinWidth="420"
+    PersistenceId="Hud"
+    Width="520"
+    Height="44">
+    <winuiex:WindowEx.SystemBackdrop>
+        <DesktopAcrylicBackdrop />
+    </winuiex:WindowEx.SystemBackdrop>
+    <Grid Padding="12,0" ColumnSpacing="10">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <Ellipse Width="10" Height="10" Fill="#FF5D5D" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="PoVoiceHud — listening" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="2" Text="⚙" VerticalAlignment="Center" />
+    </Grid>
+</winuiex:WindowEx>
