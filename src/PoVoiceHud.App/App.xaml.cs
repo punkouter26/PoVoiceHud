@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.UI.Xaml;
+using PoVoiceHud.Core.ViewModels;
 using WinUIEx;
 
 namespace PoVoiceHud.App;
@@ -29,9 +30,12 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _window = new MainWindow();
-        _window.Closed += (_, _) => File.WriteAllText(WindowFile,
+        var viewModel = new HudViewModel(TimeSpan.FromSeconds(20), repoRoot: null, openUri: _ => Task.CompletedTask);
+        var window = new MainWindow(viewModel);
+        if (Environment.GetCommandLineArgs().Contains("--demo")) window.SeedDemo();
+        window.Closed += (_, _) => File.WriteAllText(WindowFile,
             JsonSerializer.Serialize(_placement.ToDictionary(p => p.Key, p => p.Value.ToString())));
+        _window = window;
         _window.Activate();
     }
 }

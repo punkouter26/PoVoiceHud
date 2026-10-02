@@ -3,6 +3,9 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:winuiex="using:WinUIEx"
+    xmlns:local="using:PoVoiceHud.App"
+    xmlns:views="using:PoVoiceHud.App.Views"
+    xmlns:vm="using:PoVoiceHud.Core.ViewModels"
     Title="PoVoiceHud"
     IsAlwaysOnTop="True"
     IsTitleBarVisible="False"
@@ -11,19 +14,50 @@
     IsMinimizable="False"
     MinWidth="420"
     PersistenceId="Hud"
-    Width="520"
+    Width="560"
     Height="44">
     <winuiex:WindowEx.SystemBackdrop>
         <DesktopAcrylicBackdrop />
     </winuiex:WindowEx.SystemBackdrop>
-    <Grid Padding="12,0" ColumnSpacing="10">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
-        <Ellipse Width="10" Height="10" Fill="#FF5D5D" VerticalAlignment="Center" />
-        <TextBlock Grid.Column="1" Text="PoVoiceHud — listening" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-        <TextBlock Grid.Column="2" Text="⚙" VerticalAlignment="Center" />
+    <Grid x:Name="Root" PointerEntered="Root_PointerEntered" PointerExited="Root_PointerExited">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="44" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Pill (collapsed state) -->
+        <Grid Padding="12,0" ColumnSpacing="10" Background="Transparent" Tapped="Pill_Tapped">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Ellipse x:Name="RecDot" Width="10" Height="10" VerticalAlignment="Center" Fill="{x:Bind local:MainWindow.RecBrush(ViewModel.IsMuted), Mode=OneWay}" />
+            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" VerticalAlignment="Center"
+                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+            <Button Grid.Column="2" Command="{x:Bind ViewModel.ToggleExpandCommand}" Background="Transparent" BorderThickness="0"
+                    Padding="6,2" Content="{x:Bind local:MainWindow.ExpandGlyph(ViewModel.IsExpanded), Mode=OneWay}" FontSize="12" />
+            <Button Grid.Column="3" x:Name="SettingsButton" Background="Transparent" BorderThickness="0" Padding="6,2" Content="⚙" FontSize="13" />
+        </Grid>
+
+        <!-- Expanded stack -->
+        <StackPanel Grid.Row="1" x:Name="Expanded" Visibility="{x:Bind ViewModel.IsExpanded, Mode=OneWay}" Padding="8,0,8,10" Spacing="8">
+            <views:StatusBar ViewModel="{x:Bind ViewModel}" />
+            <views:FocusCard Card="{x:Bind ViewModel.Focus, Mode=OneWay}" />
+            <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled">
+                <ItemsRepeater ItemsSource="{x:Bind ViewModel.Shelf}">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Orientation="Horizontal" Spacing="8" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:InsightCardViewModel">
+                            <views:ShelfCard Card="{x:Bind}" />
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+            </ScrollViewer>
+            <views:TranscriptStrip ViewModel="{x:Bind ViewModel}" />
+        </StackPanel>
     </Grid>
 </winuiex:WindowEx>
