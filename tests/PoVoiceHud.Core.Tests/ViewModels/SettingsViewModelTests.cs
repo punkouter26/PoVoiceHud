@@ -21,7 +21,7 @@ public class SettingsViewModelTests
     [Fact]
     public void Loads_current_settings_and_whether_secrets_exist()
     {
-        _secrets[CredentialStore.BraveKey] = "k";
+        _secrets[CredentialStore.FoundryKey] = "k";
         var vm = Build(new Settings { RepoPath = @"C:\src\pmis", FoundryEndpoint = "https://acme.services.ai.azure.com" }.ApplyMode(HudMode.Repo));
 
         Assert.Equal(HudMode.Repo, vm.Mode);
@@ -29,9 +29,9 @@ public class SettingsViewModelTests
         Assert.True(vm.GitEnabled);
         Assert.False(vm.FactCheckEnabled);
         Assert.Equal(@"C:\src\pmis", vm.RepoPath);
-        Assert.True(vm.HasBraveKey);
-        Assert.False(vm.HasFoundryKey);
-        Assert.Equal("", vm.BraveKey);
+        Assert.True(vm.HasFoundryKey);
+        Assert.False(vm.HasAzdoPat);
+        Assert.Equal("", vm.FoundryKey);
     }
 
     [Fact]
@@ -78,21 +78,19 @@ public class SettingsViewModelTests
     [Fact]
     public void Save_persists_settings_and_only_the_secrets_that_were_typed()
     {
-        _secrets[CredentialStore.BraveKey] = "old-brave";
+        _secrets[CredentialStore.AzdoPat] = "old-pat";
         var vm = Build();
         vm.FoundryEndpoint = "https://acme.services.ai.azure.com";
         vm.FoundryModel = "Phi-4";
         vm.FoundryKey = "new-foundry";
-        vm.WhisperModel = "tiny.en";
 
         vm.SaveCommand.Execute(null);
 
         Assert.NotNull(_saved);
         Assert.Equal("https://acme.services.ai.azure.com", _saved.FoundryEndpoint);
         Assert.Equal("Phi-4", _saved.FoundryModel);
-        Assert.Equal("tiny.en", _saved.WhisperModel);
         Assert.Equal("new-foundry", _secrets[CredentialStore.FoundryKey]);
-        Assert.Equal("old-brave", _secrets[CredentialStore.BraveKey]);
+        Assert.Equal("old-pat", _secrets[CredentialStore.AzdoPat]);
         Assert.True(vm.HasFoundryKey);
         Assert.Equal("", vm.FoundryKey);
         Assert.True(vm.NeedsRestart);

@@ -8,7 +8,6 @@ namespace PoVoiceHud.Core.Config;
 public static partial class CredentialStore
 {
     public const string AzdoPat = "PoVoiceHud/AzDoPat";
-    public const string BraveKey = "PoVoiceHud/BraveKey";
     public const string FoundryKey = "PoVoiceHud/FoundryKey";
 
     private const int CredTypeGeneric = 1;

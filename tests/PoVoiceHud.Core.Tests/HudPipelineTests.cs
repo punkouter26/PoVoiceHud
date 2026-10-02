@@ -131,7 +131,7 @@ public class HudPipelineTests
     }
 
     [Fact]
-    public async Task Container_wires_five_providers_with_fakes_for_unconfigured_services()
+    public async Task Container_wires_all_providers_with_fakes_for_unconfigured_services()
     {
         using var repo = TempRepo.WithSampleProject();
         await SileroVadTests.EnsureModelAsync();
@@ -142,7 +142,7 @@ public class HudPipelineTests
         await using var container = services.BuildServiceProvider();
 
         var providers = container.GetRequiredService<IEnumerable<IInsightProvider>>().ToList();
-        Assert.Equal(6, providers.Count);
+        Assert.Equal(5, providers.Count);
         Assert.IsType<FakeProvider>(providers.Single(p => p.Handles == Intent.Pipeline));
         Assert.Contains(providers, p => p is SchemaProvider);
         Assert.Contains(providers, p => p is Core.Providers.FactCheck.FactCheckProvider);
@@ -166,7 +166,7 @@ public class HudPipelineTests
 
         var card = Assert.Single(insights);
         Assert.Equal(Intent.FactCheck, card.Intent);
-        Assert.StartsWith("⚠️ Unverified (no LLM configured)", card.Answer);   // no Brave key, no Foundry endpoint in this test
+        Assert.StartsWith("⚠️ Unverified (no LLM configured)", card.Answer);   // no Foundry endpoint in this test's settings
         Assert.Empty(await router.RouteAsync("who modified the invoice service last week", _ct));
     }
 }

@@ -1,10 +1,7 @@
 using System.Net;
 using System.Text.Json;
-using Polly;
-using Polly.Retry;
 using PoVoiceHud.Core.Providers;
 using PoVoiceHud.Core.Providers.FactCheck;
-using PoVoiceHud.Core.Providers.Web;
 using PoVoiceHud.Core.Routing;
 using PoVoiceHud.Core.Tests.Fixtures;
 
@@ -16,19 +13,6 @@ public class FactCheckProviderTests
     private const string Claim = "The Eiffel Tower was completed in 1889";
     private static readonly Query Statement = new(Claim, [], Intent.FactCheck);
 
-    private static readonly ResiliencePipeline NoDelay = new ResiliencePipelineBuilder()
-        .AddRetry(new RetryStrategyOptions { MaxRetryAttempts = 3, Delay = TimeSpan.Zero, ShouldHandle = Resilience.Transient })
-        .Build();
-
-    private const string SearchResponse = """
-        { "web": { "results": [
-            { "title": "Eiffel Tower - Wikipedia", "url": "https://en.wikipedia.org/wiki/Eiffel_Tower",
-              "description": "The tower was <strong>completed in March 1889</strong> for the Exposition Universelle." },
-            { "title": "Eiffel Tower history", "url": "https://www.toureiffel.paris/en/the-monument/history",
-              "description": "Construction took two years, two months and five days." }
-        ] } }
-        """;
-
     private sealed class FakeModel(Func<string, string, string> answer) : ILanguageModel
     {
         public List<(string System, string User)> Prompts { get; } = [];
@@ -39,18 +23,12 @@ public class FactCheckProviderTests
         }
     }
 
-    private static FactCheckProvider Build(ILanguageModel? model, string? braveKey = "brave-key", string searchJson = SearchResponse)
-    {
-        var search = new BraveSearch(new HttpClient(new FakeHttpHandler(_ => FakeHttpHandler.Json(searchJson))), () => braveKey, NoDelay);
-        return new FactCheckProvider(search, model);
-    }
-
     [Fact]
     public async Task Supported_verdict_renders_a_green_card_with_the_cited_source()
     {
         var model = new FakeModel((_, _) => """{"verdict":"supported","reason":"Completed in March 1889 for the Exposition Universelle.","source":"https://en.wikipedia.org/wiki/Eiffel_Tower"}""");
 
-        var insight = await Build(model).QueryAsync(Statement, _ct);
+        var insight = await new FactCheckProvider(model).QueryAsync(Statement, _ct);
 
         Assert.NotNull(insight);
         Assert.Equal(Intent.FactCheck, insight.Intent);
@@ -61,8 +39,6 @@ public class FactCheckProviderTests
         var (system, user) = Assert.Single(model.Prompts);
         Assert.Contains("JSON", system);
         Assert.Contains(Claim, user);
-        Assert.Contains("completed in March 1889", user);      // evidence snippets, tags stripped
-        Assert.DoesNotContain("<strong>", user);
     }
 
     [Theory]
@@ -71,13 +47,14 @@ public class FactCheckProviderTests
     public async Task Other_verdicts_render_their_own_prefix_and_confidence(string verdict, string expected, double confidence)
     {
         var reason = expected[(expected.IndexOf("— ") + 2)..];
-        var model = new FakeModel((_, _) => JsonSerializer.Serialize(new { verdict, reason, source = "https://en.wikipedia.org/wiki/Eiffel_Tower" }));
+        var model = new FakeModel((_, _) => JsonSerializer.Serialize(new { verdict, reason, source = "" }));
 
-        var insight = await Build(model).QueryAsync(Statement, _ct);
+        var insight = await new FactCheckProvider(model).QueryAsync(Statement, _ct);
 
         Assert.NotNull(insight);
         Assert.Equal(expected, insight.Answer);
         Assert.Equal(confidence, insight.Confidence);
+        Assert.Null(insight.Link);
     }
 
     [Theory]
@@ -91,40 +68,42 @@ public class FactCheckProviderTests
             return JsonSerializer.Serialize(new { verdict, reason = "This is an instruction, not a factual claim.", source = "" });
         });
 
-        Assert.Null(await Build(model).QueryAsync(new Query("No, don't open up", [], Intent.FactCheck), _ct));
+        Assert.Null(await new FactCheckProvider(model).QueryAsync(new Query("No, don't open up", [], Intent.FactCheck), _ct));
     }
 
     [Fact]
-    public async Task Without_an_llm_the_top_result_is_shown_as_unverified()
+    public async Task Without_an_llm_the_card_says_so()
     {
-        var insight = await Build(model: null).QueryAsync(Statement, _ct);
+        var insight = await new FactCheckProvider(model: null).QueryAsync(Statement, _ct);
 
         Assert.NotNull(insight);
-        Assert.StartsWith("⚠️ Unverified (no LLM configured) — ", insight.Answer);
-        Assert.Contains("completed in March 1889", insight.Answer);
-        Assert.Equal("https://en.wikipedia.org/wiki/Eiffel_Tower", insight.Link?.ToString());
+        Assert.StartsWith("⚠️ Unverified (no LLM configured)", insight.Answer);
+        Assert.Null(insight.Link);
     }
 
     [Fact]
     public async Task Prose_around_the_json_is_tolerated()
     {
-        var model = new FakeModel((_, _) => "Sure! Here is the verdict:\n```json\n{\"verdict\":\"supported\",\"reason\":\"Yes.\",\"source\":\"https://en.wikipedia.org/wiki/Eiffel_Tower\"}\n```");
+        var model = new FakeModel((_, _) => "Sure! Here is the verdict:\n```json\n{\"verdict\":\"supported\",\"reason\":\"Yes.\",\"source\":\"\"}\n```");
 
-        var insight = await Build(model).QueryAsync(Statement, _ct);
+        var insight = await new FactCheckProvider(model).QueryAsync(Statement, _ct);
 
         Assert.NotNull(insight);
         Assert.Equal("✅ Supported — Yes.", insight.Answer);
     }
 
-    [Fact]
-    public async Task Unusable_source_falls_back_to_the_top_search_result()
+    [Theory]
+    [InlineData("not a url")]
+    [InlineData("file:///C:/secrets.txt")]
+    [InlineData("")]
+    public async Task Only_http_sources_become_links(string source)
     {
-        var model = new FakeModel((_, _) => """{"verdict":"supported","reason":"Yes.","source":"not a url"}""");
+        var model = new FakeModel((_, _) => JsonSerializer.Serialize(new { verdict = "supported", reason = "Yes.", source }));
 
-        var insight = await Build(model).QueryAsync(Statement, _ct);
+        var insight = await new FactCheckProvider(model).QueryAsync(Statement, _ct);
 
         Assert.NotNull(insight);
-        Assert.Equal("https://en.wikipedia.org/wiki/Eiffel_Tower", insight.Link?.ToString());
+        Assert.Null(insight.Link);
     }
 
     [Fact]
@@ -132,25 +111,10 @@ public class FactCheckProviderTests
     {
         var model = new FakeModel((_, _) => throw new HttpRequestException("503", null, HttpStatusCode.ServiceUnavailable));
 
-        var insight = await Build(model).QueryAsync(Statement, _ct);
+        var insight = await new FactCheckProvider(model).QueryAsync(Statement, _ct);
 
         Assert.NotNull(insight);
         Assert.Equal("⚠️ Unverified — fact-check service unavailable (503).", insight.Answer);
-        Assert.Equal("https://en.wikipedia.org/wiki/Eiffel_Tower", insight.Link?.ToString());
-    }
-
-    [Fact]
-    public async Task Without_a_search_key_the_llm_is_asked_without_evidence()
-    {
-        var model = new FakeModel((_, user) => user.Contains("No evidence")
-            ? """{"verdict":"unverified","reason":"No evidence available.","source":""}"""
-            : throw new InvalidOperationException("expected the no-evidence prompt"));
-
-        var insight = await Build(model, braveKey: null).QueryAsync(Statement, _ct);
-
-        Assert.NotNull(insight);
-        Assert.Equal("⚠️ Unverified — No evidence available.", insight.Answer);
-        Assert.Null(insight.Link);
     }
 
     [Fact]

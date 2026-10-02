@@ -8,7 +8,7 @@ public enum AudioInput { Mic, Remote, Both }
 
 public sealed record Settings
 {
-    public const Intent RepoSources = Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline | Intent.Web;
+    public const Intent RepoSources = Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline;
 
     public HudMode Mode { get; init; } = HudMode.Simple;
     public AudioInput AudioInput { get; init; } = AudioInput.Mic;

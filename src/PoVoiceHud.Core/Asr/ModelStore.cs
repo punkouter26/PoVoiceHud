@@ -11,8 +11,6 @@ public static class ModelStore
 
     public static string Directory { get; } = Path.Combine(Config.AppPaths.DataDir, "models");
 
-    public static readonly string[] WhisperModels = ["tiny.en", "base.en", "small.en"];
-
     public static async Task<ModelPaths> EnsureAsync(string whisperModel, IProgress<double>? progress, CancellationToken ct)
     {
         System.IO.Directory.CreateDirectory(Directory);

@@ -8,6 +8,5 @@ public enum Intent
     Schema = 2,
     Docs = 4,
     Pipeline = 8,
-    Web = 16,
-    FactCheck = 32,
+    FactCheck = 32,   // 16 was the removed web-answers source; value kept stable for settings.json
 }

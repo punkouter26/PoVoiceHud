@@ -52,7 +52,7 @@ public class SettingsStoreTests : IDisposable
     {
         var repo = new Settings().ApplyMode(HudMode.Repo);
         Assert.Equal(AudioInput.Both, repo.AudioInput);
-        Assert.Equal(Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline | Intent.Web, repo.EnabledSources);
+        Assert.Equal(Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline, repo.EnabledSources);
 
         var simple = repo.ApplyMode(HudMode.Simple);
         Assert.Equal(AudioInput.Mic, simple.AudioInput);

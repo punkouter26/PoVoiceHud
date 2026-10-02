@@ -14,7 +14,7 @@ public class RouterTests
     private static FakeProvider Recording(Intent handles, List<string> calls, double confidence = 1) =>
         new(handles, q => { calls.Add($"{handles}:{q.Text}"); return new Insight(handles, handles.ToString(), "answer", [], confidence); });
 
-    private const Intent RepoSources = Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline | Intent.Web;
+    private const Intent RepoSources = Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline;
 
     private static Router Build(IEnumerable<IInsightProvider> providers, SymbolIndex? index = null, Intent enabled = RepoSources) =>
         new(providers, () => index, () => enabled, NullLogger<Router>.Instance);
@@ -35,7 +35,7 @@ public class RouterTests
     public async Task Simple_mode_fact_checks_statements_and_ignores_questions()
     {
         var calls = new List<string>();
-        var router = Build([Recording(Intent.FactCheck, calls), Recording(Intent.Web, calls), Recording(Intent.Git, calls)], enabled: Intent.FactCheck);
+        var router = Build([Recording(Intent.FactCheck, calls), Recording(Intent.Git, calls)], enabled: Intent.FactCheck);
 
         Assert.Single(await router.RouteAsync("The Eiffel Tower was completed in 1889", _ct));
         Assert.Equal(["FactCheck:The Eiffel Tower was completed in 1889"], calls);
@@ -117,19 +117,16 @@ public class RouterTests
     }
 
     [Fact]
-    public async Task Questions_without_keywords_or_symbols_fall_back_to_web()
+    public async Task Questions_no_source_claims_produce_nothing()
     {
         using var repo = TempRepo.WithSampleProject();
         var index = SymbolIndex.Build(repo.Root);
         var calls = new List<string>();
-        var router = Build([Recording(Intent.Web, calls), Recording(Intent.Git, calls)], index);
+        var router = Build([Recording(Intent.Git, calls)], index);
 
-        Assert.Single(await router.RouteAsync("what does IAsyncDisposable do again", _ct));
-        Assert.Contains(calls, c => c.StartsWith("Web:"));
-
-        calls.Clear();
-        Assert.Empty(await router.RouteAsync("what is the invoice service for", _ct));   // symbol matched, no keyword, not web
-        Assert.Empty(await router.RouteAsync("we should refactor that later", _ct));      // not a question
+        Assert.Empty(await router.RouteAsync("what does IAsyncDisposable do again", _ct));
+        Assert.Empty(await router.RouteAsync("what is the invoice service for", _ct));   // symbol matched, no keyword
+        Assert.Empty(await router.RouteAsync("we should refactor that later", _ct));      // fact check is off here
         Assert.Empty(calls);
     }
 

@@ -17,6 +17,10 @@ Mid-build the owner asked for a simple mode: speak into the laptop mic and have 
 
 JSON is requested in the prompt and parsed leniently (first `{…}`), because Llama deployments advertise text output only. Without evidence the model judges from its own knowledge; every failure degrades to an `⚠️ Unverified` card.
 
+## Amendment (same day)
+
+Web evidence was removed by the owner's decision: the Brave client, `[WEB]` answer cards and the Brave key are gone. The model judges from its own knowledge and may cite a URL it is confident exists; a fourth verdict, `not_a_claim`, suppresses cards for commands, chatter and questions. The noise filter's minimum dropped from 4 to 3 words so short claims ("Jesus is alive") are checked.
+
 ## Consequences
 
 - No SDK dependency; swapping models is a settings change.

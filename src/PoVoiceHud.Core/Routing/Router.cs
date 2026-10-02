@@ -6,7 +6,7 @@ namespace PoVoiceHud.Core.Routing;
 
 /// <summary>
 /// Noise filter → intents (masked by the enabled sources) → symbol matches → parallel fan-out → rank by confidence.
-/// Declarative statements additionally go to FactCheck when that source is on.
+/// Declarative statements go to FactCheck when that source is on; questions nothing claims are dropped.
 /// </summary>
 public sealed class Router(IEnumerable<IInsightProvider> providers, Func<SymbolIndex?> index, Func<Intent> enabledSources, ILogger<Router> log)
 {
@@ -19,8 +19,6 @@ public sealed class Router(IEnumerable<IInsightProvider> providers, Func<SymbolI
         var enabled = enabledSources();
         var intents = IntentClassifier.Classify(text) & enabled;
         var symbols = index() is { } current ? SymbolMatcher.Match(text, current) : [];
-        if (intents == Intent.None && enabled.HasFlag(Intent.Web) && IntentClassifier.IsQuestion(text) && !symbols.Any(s => s.Score >= SymbolMatcher.Strong))
-            intents = Intent.Web;
         if (enabled.HasFlag(Intent.FactCheck) && IntentClassifier.IsDeclarative(text))
             intents |= Intent.FactCheck;
         if (intents == Intent.None) return [];

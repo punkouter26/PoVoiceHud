@@ -2,10 +2,10 @@
 
 An always-on-top Windows 11 HUD that listens, transcribes locally with Whisper, and answers in one sentence.
 
-- **Simple mode (default):** your mic only. Declarative statements you say are fact-checked — Brave Search for evidence, a Llama/cheap model on your Azure AI Foundry project (or local Ollama) for the verdict: `✅ Supported` / `❌ Contradicted` / `⚠️ Unverified` + reason + source link.
-- **Repo mode:** mic + remote call audio. Questions are answered from the active repository — git history, EF Core schema, ADRs (with staleness check), Azure DevOps pipelines, web fallback — with `[Jump]` buttons into VS Code.
+- **Simple mode (default):** your mic only. Declarative statements you say are judged by a Llama/cheap model on your Azure AI Foundry project (or local Ollama): `✅ Supported` / `❌ Contradicted` / `⚠️ Unverified` + reason. Commands, chatter and questions produce no card.
+- **Repo mode (under Advanced in Settings):** mic + remote call audio. Questions are answered from the active repository — git history, EF Core schema, ADRs (with staleness check), Azure DevOps pipelines — with `[Jump]` buttons into VS Code.
 
-Audio never leaves the machine. Only the spoken text (and search snippets) go to Brave and to the LLM endpoint you configure.
+Audio never leaves the machine. Only the spoken text goes to the LLM endpoint you configure.
 
 ## Run
 
@@ -22,17 +22,16 @@ Requirements: Windows 11, .NET 10 SDK, a microphone. No GPU needed (Whisper runs
 
 | Setting | Where it lives |
 |---|---|
-| Mode, audio input, source toggles, repo path, Whisper model, endpoints, model names | `%LOCALAPPDATA%\PoVoiceHud\settings.json` |
-| Foundry/Ollama key, Brave key, Azure DevOps PAT | Windows Credential Manager (`PoVoiceHud/FoundryKey`, `PoVoiceHud/BraveKey`, `PoVoiceHud/AzDoPat`) |
+| Mode, audio input, source toggles, repo path, endpoints, model names (and `WhisperModel`, fixed to `base.en` unless edited here) | `%LOCALAPPDATA%\PoVoiceHud\settings.json` |
+| Foundry/Ollama key, Azure DevOps PAT | Windows Credential Manager (`PoVoiceHud/FoundryKey`, `PoVoiceHud/AzDoPat`) |
 
-- **Fact-check LLM:** either an Azure AI Foundry resource root (`https://<resource>.services.ai.azure.com` + key; the app calls `/models/chat/completions?api-version=2024-05-01-preview`) or a full OpenAI-compatible URL such as Ollama's `http://localhost:11434/v1/chat/completions` (no key). "Use local Ollama" fills that in; `ollama pull llama3.2` first.
-- **Brave Search:** optional; without it the LLM judges from its own knowledge and web-answer cards degrade to a `[Search]` link.
-- **Mute:** Win+Shift+M or click the dot. Muting drops everything buffered.
+- **Fact-check model:** either an Azure AI Foundry resource root (`https://<resource>.services.ai.azure.com` + key; the app calls `/models/chat/completions?api-version=2024-05-01-preview`) or a full OpenAI-compatible URL such as Ollama's `http://localhost:11434/v1/chat/completions` (no key). "Use local Ollama" fills that in; `ollama pull llama3.2` first.
+- **Mute:** Ctrl+Shift+M (Win+Shift+M when Explorer doesn't own it) or click the dot. Muting drops everything buffered.
 
 ## Test
 
 ```powershell
-dotnet test --solution PoVoiceHud.sln               # 165 tests, sequential (timing assertions)
+dotnet test --solution PoVoiceHud.sln               # 169 tests, sequential (timing assertions)
 dotnet test --solution PoVoiceHud.sln --coverage    # Microsoft.Testing.Extensions.CodeCoverage
 ```
 

@@ -12,7 +12,6 @@ using PoVoiceHud.Core.Providers.Fakes;
 using PoVoiceHud.Core.Providers.Git;
 using PoVoiceHud.Core.Providers.Pipeline;
 using PoVoiceHud.Core.Providers.Schema;
-using PoVoiceHud.Core.Providers.Web;
 using PoVoiceHud.Core.Routing;
 using PoVoiceHud.Core.Vad;
 
@@ -45,15 +44,12 @@ public static class ServiceCollectionExtensions
                 "Add your Azure DevOps org URL (https://dev.azure.com/<org>), project and PAT in Settings."));
 
         services.AddSingleton(new HttpClient());
-        services.AddSingleton(sp => new BraveSearch(sp.GetRequiredService<HttpClient>(), () => CredentialStore.Read(CredentialStore.BraveKey)));
-        services.AddSingleton<IInsightProvider>(sp => new BraveProvider(sp.GetRequiredService<BraveSearch>()));
 
         // A key is required for a cloud endpoint; a local (loopback) endpoint such as Ollama needs none.
         var foundryKey = CredentialStore.Read(CredentialStore.FoundryKey);
         var llmReady = FoundryClient.IsValidEndpoint(settings.FoundryEndpoint)
                        && (foundryKey is not null || new Uri(settings.FoundryEndpoint!).IsLoopback);
         services.AddSingleton<IInsightProvider>(sp => new FactCheckProvider(
-            sp.GetRequiredService<BraveSearch>(),
             llmReady ? new FoundryClient(sp.GetRequiredService<HttpClient>(), new Uri(settings.FoundryEndpoint!), settings.FoundryModel, foundryKey) : null));
 
         services.AddSingleton(sp => new Router(
