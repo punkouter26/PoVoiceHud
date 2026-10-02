@@ -36,9 +36,15 @@ public partial class App : Application
             File.AppendAllText(Path.Combine(DataDir, "crash.log"), $"{DateTimeOffset.Now:O} {e.Exception}\n\n");
             e.Handled = true;
         };
-        var saved = File.Exists(WindowFile)
-            ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(WindowFile))
-            : null;
+        Dictionary<string, string>? saved = null;
+        try
+        {
+            if (File.Exists(WindowFile)) saved = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(WindowFile));
+        }
+        catch (Exception e) when (e is JsonException or IOException)
+        {
+            // half-written placement file: start with default placement rather than crash on every launch
+        }
         _placement = saved?.ToDictionary(p => p.Key, p => (object)p.Value) ?? [];
         WindowManager.PersistenceStorage = _placement;
     }
@@ -52,6 +58,7 @@ public partial class App : Application
         _window.Activate();
         _docking = new WindowDocking(_window);
         _hotkey = new GlobalHotkey(_window, () => _window.DispatcherQueue.TryEnqueue(() => viewModel.ToggleMuteCommand.Execute(null)));
+        viewModel.MuteHint = _hotkey.Binding is { } binding ? $"Mute: {binding}" : "Mute: click the dot (hotkeys taken)";
 
         _window.AttachSettings(new SettingsViewModel(settings,
             readSecret: CredentialStore.Read,
@@ -81,17 +88,19 @@ public partial class App : Application
             var models = await ModelStore.EnsureAsync(settings.WhisperModel,
                 new Progress<double>(p => Status($"Downloading models… {p:P0}")), CancellationToken.None);
 
+            Status("Loading models…");
             var services = new ServiceCollection();
             services.AddLogging(b => b.AddDebug());
             services.AddPoVoiceHudCore(settings, models);
             _container = services.BuildServiceProvider();
 
-            var pipeline = _container.GetRequiredService<HudPipeline>();
+            // Resolving the pipeline loads Whisper (seconds for small.en): keep it off the UI thread.
+            var pipeline = await Task.Run(() => _container.GetRequiredService<HudPipeline>());
+            pipeline.IsMuted = viewModel.IsMuted;   // the user may have muted during the download
             viewModel.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName == nameof(HudViewModel.IsMuted)) pipeline.IsMuted = viewModel.IsMuted;
             };
-            if (_hotkey is { Registered: false }) Status("Win+Shift+M is taken by another app — click the dot to mute");
 
             _ = Drain(pipeline.Status, s => viewModel.SetStatus($"{ModeLabel(settings)} · {s}"));
             _ = Drain(pipeline.Transcript, viewModel.AddTranscript);

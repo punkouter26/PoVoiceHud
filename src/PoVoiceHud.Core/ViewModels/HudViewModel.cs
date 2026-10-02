@@ -23,6 +23,7 @@ public sealed partial class HudViewModel(TimeSpan autoExpand, string? repoRoot, 
     [ObservableProperty] private bool _isPointerOver;
     [ObservableProperty] private string _headline = "PoVoiceHud — listening";
     [ObservableProperty] private string _statusText = "Starting…";
+    [ObservableProperty] private string _muteHint = "Mute: Win+Shift+M";
     [ObservableProperty] private InsightCardViewModel? _focus;
 
     public ObservableCollection<InsightCardViewModel> Shelf { get; } = [];

@@ -47,12 +47,8 @@ public sealed class DocsProvider(Func<string?> repoRoot) : IInsightProvider
     /// <summary>Author date of the newest commit whose tree entry for the path (file or directory) differs from its parent's.</summary>
     private static DateTimeOffset? LastChange(Repository repo, string path)
     {
-        foreach (var commit in repo.Commits.QueryBy(new CommitFilter { SortBy = CommitSortStrategies.Topological }))
-        {
-            var current = commit.Tree[path]?.Target.Id;
-            var parent = commit.Parents.FirstOrDefault()?.Tree[path]?.Target.Id;
-            if (current != parent) return commit.Author.When;
-        }
-        return null;
+        if (repo.Head.Tip?.Tree[path] is null) return null;   // never existed or deleted: nothing to compare
+        return repo.Commits.QueryBy(path, new CommitFilter { SortBy = CommitSortStrategies.Topological })
+            .FirstOrDefault()?.Commit.Author.When;
     }
 }

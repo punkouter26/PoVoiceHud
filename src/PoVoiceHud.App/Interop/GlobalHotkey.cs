@@ -5,14 +5,25 @@ using WinUIEx.Messaging;
 
 namespace PoVoiceHud.App.Interop;
 
-/// <summary>Win+Shift+M via RegisterHotKey; WM_HOTKEY arrives through WinUIEx's window message hook.</summary>
+/// <summary>
+/// Global mute hotkey via RegisterHotKey; WM_HOTKEY arrives through WinUIEx's window message hook.
+/// Win+Shift+M is the spec'd binding, but Explorer owns it ("restore minimized windows") on a stock desktop,
+/// so Ctrl+Shift+M is tried next. <see cref="Binding"/> says which one is live.
+/// </summary>
 internal sealed partial class GlobalHotkey : IDisposable
 {
     private const int Id = 1;
     private const uint ModShift = 0x0004;
+    private const uint ModControl = 0x0002;
     private const uint ModWin = 0x0008;
     private const uint ModNoRepeat = 0x4000;
     private const uint WmHotkey = 0x0312;
+
+    private static readonly (string Name, uint Modifiers)[] Candidates =
+    [
+        ("Win+Shift+M", ModWin | ModShift | ModNoRepeat),
+        ("Ctrl+Shift+M", ModControl | ModShift | ModNoRepeat),
+    ];
 
     private readonly nint _hwnd;
     private readonly WindowManager _manager;
@@ -23,12 +34,12 @@ internal sealed partial class GlobalHotkey : IDisposable
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
         _manager = WindowManager.Get(window);
         _pressed = pressed;
-        Registered = RegisterHotKey(_hwnd, Id, ModWin | ModShift | ModNoRepeat, 'M');
+        Binding = Candidates.FirstOrDefault(c => RegisterHotKey(_hwnd, Id, c.Modifiers, 'M')).Name;
         _manager.WindowMessageReceived += OnMessage;
     }
 
-    /// <summary>False when another app already owns Win+Shift+M; the pill's dot still toggles mute by click.</summary>
-    public bool Registered { get; }
+    /// <summary>The registered combination, or null when both are taken (the pill's dot still toggles mute).</summary>
+    public string? Binding { get; }
 
     private void OnMessage(object? sender, WindowMessageEventArgs e)
     {
@@ -38,7 +49,7 @@ internal sealed partial class GlobalHotkey : IDisposable
     public void Dispose()
     {
         _manager.WindowMessageReceived -= OnMessage;
-        UnregisterHotKey(_hwnd, Id);
+        if (Binding is not null) UnregisterHotKey(_hwnd, Id);
     }
 
     [LibraryImport("user32.dll", SetLastError = true)]

@@ -9,7 +9,7 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        <TextBlock Grid.Column="1" Text="Mute: Win+Shift+M" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+        <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.MuteHint, Mode=OneWay}" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
         <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.RepoLabel, Mode=OneWay}" FontSize="12" HorizontalAlignment="Right"
                    TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
     </Grid>

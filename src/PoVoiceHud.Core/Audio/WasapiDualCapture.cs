@@ -105,14 +105,25 @@ public sealed class WasapiDualCapture(AudioInput input = AudioInput.Both) : IAud
         (_timer, _loop, _mic, _graph) = (null, null, null, null);
     }
 
+    private int _ticking;
+
     private void Tick()
     {
-        MixGraph? graph;
-        lock (_gate) graph = _graph;
-        if (graph is null) return;
-        // Drain extra frames when capture runs ahead of the timer so latency stays bounded.
-        do FrameAvailable?.Invoke(graph.ReadFrame());
-        while (graph.Buffered > PcmFrame.Duration * 2);
+        // Timer callbacks can overlap when a tick (VAD + segmenter downstream) takes > 100 ms; MixGraph is single-threaded.
+        if (Interlocked.Exchange(ref _ticking, 1) == 1) return;
+        try
+        {
+            MixGraph? graph;
+            lock (_gate) graph = _graph;
+            if (graph is null) return;
+            // Drain extra frames when capture runs ahead of the timer so latency stays bounded.
+            do FrameAvailable?.Invoke(graph.ReadFrame());
+            while (graph.Buffered > PcmFrame.Duration * 2);
+        }
+        finally
+        {
+            Volatile.Write(ref _ticking, 0);
+        }
     }
 
     void IMMNotificationClient.OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)

@@ -37,11 +37,12 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IInsightProvider>(sp => new DocsProvider(() => sp.GetService<Workspace.Workspace>()?.Root));
 
         var pat = CredentialStore.Read(CredentialStore.AzdoPat);
-        if (settings is { AzdoOrgUrl: { } org, AzdoProject: { } project } && pat is not null)
+        if (settings is { AzdoProject: { } project } && pat is not null && Uri.TryCreate(settings.AzdoOrgUrl, UriKind.Absolute, out var org))
             services.AddSingleton<IInsightProvider>(sp =>
-                new AzdoProvider(new AzdoBuildClient(new Uri(org), project, pat), () => sp.GetService<Workspace.Workspace>()?.Root));
+                new AzdoProvider(new AzdoBuildClient(org, project, pat), () => sp.GetService<Workspace.Workspace>()?.Root));
         else
-            services.AddSingleton<IInsightProvider>(FakeProvider.Unconfigured(Intent.Pipeline, "Add your Azure DevOps org, project and PAT in Settings."));
+            services.AddSingleton<IInsightProvider>(FakeProvider.Unconfigured(Intent.Pipeline,
+                "Add your Azure DevOps org URL (https://dev.azure.com/<org>), project and PAT in Settings."));
 
         services.AddSingleton(new HttpClient());
         services.AddSingleton(sp => new BraveSearch(sp.GetRequiredService<HttpClient>(), () => CredentialStore.Read(CredentialStore.BraveKey)));

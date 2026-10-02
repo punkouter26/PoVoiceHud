@@ -41,9 +41,10 @@ public sealed class Workspace : IDisposable
             Index = SymbolIndex.Build(Root);
             Changed?.Invoke();
         }
-        catch (LibGit2SharpException)
+        catch (Exception e) when (e is LibGit2SharpException or IOException or UnauthorizedAccessException)
         {
-            // .git was mid-write; the next change event retries.
+            // .git mid-write or a file locked/deleted by the editor; this runs on a timer thread, so never let it escape.
+            // The next change event retries.
         }
     }
 

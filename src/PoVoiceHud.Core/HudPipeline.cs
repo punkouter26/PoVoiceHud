@@ -22,7 +22,8 @@ public sealed class HudPipeline : IDisposable
     private readonly Router _router;
     private readonly ILogger<HudPipeline> _log;
     private readonly UtteranceSegmenter _segmenter = new();
-    private readonly Channel<Utterance> _utterances = Channel.CreateUnbounded<Utterance>(new UnboundedChannelOptions { SingleReader = true });
+    // Not SingleReader: the mute setter drains it from the UI thread while the worker is the normal consumer.
+    private readonly Channel<Utterance> _utterances = Channel.CreateUnbounded<Utterance>();
     private readonly Channel<TranscriptLine> _transcript = Channel.CreateUnbounded<TranscriptLine>();
     private readonly Channel<IReadOnlyList<Insight>> _insights = Channel.CreateUnbounded<IReadOnlyList<Insight>>();
     private readonly Channel<string> _status = Channel.CreateUnbounded<string>();
@@ -93,8 +94,9 @@ public sealed class HudPipeline : IDisposable
                     var insights = await _router.RouteAsync(text, _cts.Token);
                     if (generation == Volatile.Read(ref _generation) && insights.Count > 0) _insights.Writer.TryWrite(insights);
                 }
-                catch (Exception e) when (e is not OperationCanceledException)
+                catch (Exception e) when (!_cts.IsCancellationRequested)
                 {
+                    // Includes HttpClient timeouts (TaskCanceledException): the worker must outlive one bad call.
                     _log.LogError(e, "Utterance at {At} failed", utterance.Start);
                 }
             }
