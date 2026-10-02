@@ -28,6 +28,7 @@ public sealed class TempRepo : IDisposable
             """);
         repo.Write("src/Domain/Entities/Tenant.cs", "namespace Pmis.Domain;\n\npublic class Tenant { public Guid Id { get; set; } }\n");
         repo.Write("src/Services/InvoiceService.cs", "namespace Pmis.Services;\n\npublic class InvoiceService { }\n");
+        repo.Write("src/Auth/ClaimsHeaderMiddleware.cs", "namespace Pmis.Auth;\n\npublic class ClaimsHeaderMiddleware { }\n");
         repo.Write("src/Infrastructure/Data/Migrations/AppDbContextModelSnapshot.cs", """
             using Microsoft.EntityFrameworkCore;
 

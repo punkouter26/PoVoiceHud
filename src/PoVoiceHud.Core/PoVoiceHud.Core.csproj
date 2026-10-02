@@ -15,5 +15,6 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Humanizer.Core" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Markdig" />
   </ItemGroup>
 </Project>
