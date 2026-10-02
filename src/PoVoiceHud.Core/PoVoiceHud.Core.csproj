@@ -4,4 +4,8 @@
     <!-- LibraryImport source generator (Credential Manager, hotkey) emits unsafe stubs. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NAudio.Core" />
+    <PackageReference Include="NAudio.Wasapi" />
+  </ItemGroup>
 </Project>
