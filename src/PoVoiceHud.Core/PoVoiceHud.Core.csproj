@@ -8,5 +8,7 @@
     <PackageReference Include="NAudio.Core" />
     <PackageReference Include="NAudio.Wasapi" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" />
+    <PackageReference Include="Whisper.net" />
+    <PackageReference Include="Whisper.net.Runtime" />
   </ItemGroup>
 </Project>
