@@ -9,9 +9,11 @@ namespace PoVoiceHud.Core.Providers.FactCheck;
 public sealed class FactCheckProvider(BraveSearch search, ILanguageModel? model) : IInsightProvider
 {
     private const string SystemPrompt =
-        "You are a careful fact checker. Given a claim and web evidence, reply with ONLY a JSON object: " +
-        "{\"verdict\": \"supported\" | \"contradicted\" | \"unverified\", \"reason\": one short sentence, " +
-        "\"source\": the most relevant evidence URL or \"\"}. Say \"unverified\" only when you genuinely cannot tell.";
+        "You are a careful fact checker listening to someone speak. Given a sentence and web evidence, reply with ONLY a JSON object: " +
+        "{\"verdict\": \"supported\" | \"contradicted\" | \"unverified\" | \"not_a_claim\", \"reason\": one short sentence, " +
+        "\"source\": the most relevant evidence URL or \"\"}. Use \"not_a_claim\" for instructions, chit-chat, questions, " +
+        "opinions, personal statements and fragments — anything that is not a checkable statement about the world. " +
+        "Say \"unverified\" only for a real claim you genuinely cannot judge.";
 
     public Intent Handles => Intent.FactCheck;
 
@@ -50,6 +52,7 @@ public sealed class FactCheckProvider(BraveSearch search, ILanguageModel? model)
         }
 
         var (verdict, reason, source) = Parse(raw);
+        if (verdict.Replace(' ', '_') == "not_a_claim") return null;   // nothing to show for chatter or commands
         var (prefix, confidence) = verdict switch
         {
             "supported" => ("✅ Supported", 0.9),

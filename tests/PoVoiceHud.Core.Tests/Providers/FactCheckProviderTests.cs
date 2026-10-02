@@ -80,6 +80,20 @@ public class FactCheckProviderTests
         Assert.Equal(confidence, insight.Confidence);
     }
 
+    [Theory]
+    [InlineData("not_a_claim")]
+    [InlineData("NOT A CLAIM")]
+    public async Task Chatter_and_commands_the_model_flags_produce_no_card(string verdict)
+    {
+        var model = new FakeModel((system, _) =>
+        {
+            Assert.Contains("not_a_claim", system);
+            return JsonSerializer.Serialize(new { verdict, reason = "This is an instruction, not a factual claim.", source = "" });
+        });
+
+        Assert.Null(await Build(model).QueryAsync(new Query("No, don't open up", [], Intent.FactCheck), _ct));
+    }
+
     [Fact]
     public async Task Without_an_llm_the_top_result_is_shown_as_unverified()
     {

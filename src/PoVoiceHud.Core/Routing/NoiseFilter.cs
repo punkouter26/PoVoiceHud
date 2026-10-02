@@ -11,11 +11,11 @@ public static partial class NoiseFilter
         "bye", "alright", "so", "well", "like", "please", "can", "hear", "me", "guys", "folks", "perfect",
     };
 
-    // ponytail: word-count + filler-set heuristic; a 3-word real question ("who changed this") is dropped too.
+    // ponytail: word-count + filler-set heuristic; the fact checker's "not_a_claim" verdict catches what slips through.
     public static bool IsNoise(string text)
     {
         var words = Words().Matches(text).Select(m => m.Value).ToArray();
-        return words.Length < 4 || words.All(Fillers.Contains);
+        return words.Length < 3 || words.All(Fillers.Contains);
     }
 
     [GeneratedRegex(@"[\p{L}']+")]

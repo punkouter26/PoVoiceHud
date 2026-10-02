@@ -22,6 +22,8 @@ public class NoiseFilterTests
     [InlineData("does the inspection table have a tenant id foreign key")]
     [InlineData("who modified the invoice service")]
     [InlineData("let me check the exact schema definition")]
+    [InlineData("Jesus is alive.")]
+    [InlineData("who changed this")]
     public void Keeps_substantive_lines(string text)
     {
         Assert.False(NoiseFilter.IsNoise(text));
