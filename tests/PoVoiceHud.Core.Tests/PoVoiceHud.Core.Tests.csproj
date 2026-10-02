@@ -16,4 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PoVoiceHud.Core\PoVoiceHud.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
