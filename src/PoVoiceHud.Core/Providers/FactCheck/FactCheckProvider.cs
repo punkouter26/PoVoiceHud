@@ -11,7 +11,7 @@ public sealed class FactCheckProvider(BraveSearch search, ILanguageModel? model)
     private const string SystemPrompt =
         "You are a careful fact checker. Given a claim and web evidence, reply with ONLY a JSON object: " +
         "{\"verdict\": \"supported\" | \"contradicted\" | \"unverified\", \"reason\": one short sentence, " +
-        "\"source\": the most relevant evidence URL or \"\"}. Say \"unverified\" when the evidence is insufficient.";
+        "\"source\": the most relevant evidence URL or \"\"}. Say \"unverified\" only when you genuinely cannot tell.";
 
     public Intent Handles => Intent.FactCheck;
 
@@ -63,7 +63,8 @@ public sealed class FactCheckProvider(BraveSearch search, ILanguageModel? model)
     private static string UserPrompt(string claim, IReadOnlyList<BraveResult> evidence)
     {
         var sb = new StringBuilder().Append("Claim: ").AppendLine(claim).AppendLine().AppendLine("Evidence:");
-        if (evidence.Count == 0) sb.AppendLine("No evidence was found online; judge from general knowledge and prefer \"unverified\".");
+        if (evidence.Count == 0)
+            sb.AppendLine("No evidence was found online. Judge from your own knowledge: answer \"supported\" or \"contradicted\" when you are confident, otherwise \"unverified\".");
         for (var i = 0; i < evidence.Count; i++)
             sb.Append(i + 1).Append(". ").Append(evidence[i].Title).Append(" — ").Append(evidence[i].Description).Append(" (").Append(evidence[i].Url).AppendLine(")");
         return sb.ToString();
