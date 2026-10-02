@@ -1,5 +1,7 @@
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using PoVoiceHud.Core.Audio;
@@ -35,6 +37,15 @@ public sealed partial class MainWindow : WindowEx
     public HudViewModel ViewModel { get; }
 
     private void ApplyHeight() => Height = ViewModel.IsExpanded ? ExpandedHeight : PillHeight;
+
+    public void AttachSettings(SettingsViewModel settings) =>
+        SettingsButton.Flyout = new Flyout { Content = new Views.SettingsFlyout(settings), Placement = FlyoutPlacementMode.Bottom };
+
+    public void ShowSettings()
+    {
+        if (Root.IsLoaded) SettingsButton.Flyout?.ShowAt(SettingsButton);
+        else Root.Loaded += (_, _) => SettingsButton.Flyout?.ShowAt(SettingsButton);
+    }
 
     public static Brush RecBrush(bool muted) => new SolidColorBrush(muted ? Colors.OrangeRed : Colors.LimeGreen);
 

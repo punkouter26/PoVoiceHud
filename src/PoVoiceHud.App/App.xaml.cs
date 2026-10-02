@@ -31,6 +31,11 @@ public partial class App : Application
     {
         InitializeComponent();
         Directory.CreateDirectory(DataDir);
+        UnhandledException += (_, e) =>
+        {
+            File.AppendAllText(Path.Combine(DataDir, "crash.log"), $"{DateTimeOffset.Now:O} {e.Exception}\n\n");
+            e.Handled = true;
+        };
         var saved = File.Exists(WindowFile)
             ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(WindowFile))
             : null;
@@ -48,11 +53,18 @@ public partial class App : Application
         _docking = new WindowDocking(_window);
         _hotkey = new GlobalHotkey(_window, () => _window.DispatcherQueue.TryEnqueue(() => viewModel.ToggleMuteCommand.Execute(null)));
 
+        _window.AttachSettings(new SettingsViewModel(settings,
+            readSecret: CredentialStore.Read,
+            writeSecret: CredentialStore.Write,
+            pickFolder: PickFolderAsync,
+            save: s => SettingsStore.Save(s, SettingsStore.DefaultPath)));
+
         var args2 = Environment.GetCommandLineArgs();
         if (args2.Contains("--pin")) viewModel.ToggleExpandCommand.Execute(null);   // start pinned open (manual testing)
         if (args2.Contains("--demo"))
         {
             _window.SeedDemo();
+            _window.ShowSettings();
             return;
         }
         if (warning is not null) viewModel.SetStatus(warning);
@@ -101,6 +113,14 @@ public partial class App : Application
     private static string ModeLabel(Settings settings) => settings.Mode == HudMode.Simple
         ? "Mic · Fact check"
         : $"{settings.AudioInput} · {settings.EnabledSources}";
+
+    private async Task<string?> PickFolderAsync()
+    {
+        var picker = new Windows.Storage.Pickers.FolderPicker();
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(_window));
+        return (await picker.PickSingleFolderAsync())?.Path;
+    }
 
     private async Task OpenAsync(Uri uri)
     {

@@ -1,0 +1,60 @@
+<UserControl
+    x:Class="PoVoiceHud.App.Views.SettingsFlyout"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PoVoiceHud.App.Views"
+    Width="420">
+    <ScrollViewer MaxHeight="640">
+        <StackPanel Spacing="10" Padding="4">
+            <TextBlock Text="Mode" FontWeight="SemiBold" />
+            <ComboBox ItemsSource="{x:Bind ViewModel.Modes}" SelectedItem="{x:Bind ViewModel.Mode, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+            <TextBlock Text="Simple = your mic only, statements fact-checked. Repo = mic + remote audio, questions answered from the repo."
+                       FontSize="12" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+            <TextBlock Text="Audio input" FontWeight="SemiBold" />
+            <ComboBox ItemsSource="{x:Bind ViewModel.AudioInputs}" SelectedItem="{x:Bind ViewModel.AudioInput, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
+            <TextBlock Text="Sources" FontWeight="SemiBold" />
+            <ToggleSwitch Header="Fact check (web + LLM)" IsOn="{x:Bind ViewModel.FactCheckEnabled, Mode=TwoWay}" />
+            <ToggleSwitch Header="Git history" IsOn="{x:Bind ViewModel.GitEnabled, Mode=TwoWay}" />
+            <ToggleSwitch Header="Database schema" IsOn="{x:Bind ViewModel.SchemaEnabled, Mode=TwoWay}" />
+            <ToggleSwitch Header="Docs / ADRs" IsOn="{x:Bind ViewModel.DocsEnabled, Mode=TwoWay}" />
+            <ToggleSwitch Header="Azure DevOps pipelines" IsOn="{x:Bind ViewModel.PipelineEnabled, Mode=TwoWay}" />
+            <ToggleSwitch Header="Web answers" IsOn="{x:Bind ViewModel.WebEnabled, Mode=TwoWay}" />
+
+            <TextBlock Text="Repository" FontWeight="SemiBold" />
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox Text="{x:Bind ViewModel.RepoPath, Mode=TwoWay}" PlaceholderText="C:\src\your-repo" />
+                <Button Grid.Column="1" Content="Browse…" Command="{x:Bind ViewModel.BrowseCommand}" />
+            </Grid>
+            <TextBlock Text="{x:Bind ViewModel.RepoError, Mode=OneWay}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" FontSize="12" TextWrapping="Wrap" />
+
+            <TextBlock Text="Speech model" FontWeight="SemiBold" />
+            <ComboBox ItemsSource="{x:Bind ViewModel.WhisperModels}" SelectedItem="{x:Bind ViewModel.WhisperModel, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+
+            <TextBlock Text="Fact-check LLM (Azure AI Foundry or local Ollama)" FontWeight="SemiBold" />
+            <TextBox Header="Endpoint" Text="{x:Bind ViewModel.FoundryEndpoint, Mode=TwoWay}" PlaceholderText="https://&lt;resource&gt;.services.ai.azure.com" />
+            <TextBox Header="Model / deployment" Text="{x:Bind ViewModel.FoundryModel, Mode=TwoWay}" />
+            <PasswordBox Header="API key" Password="{x:Bind ViewModel.FoundryKey, Mode=TwoWay}" PlaceholderText="{x:Bind local:SettingsFlyout.KeyPlaceholder(ViewModel.HasFoundryKey), Mode=OneWay}" />
+            <Button Content="Use local Ollama (no key)" Command="{x:Bind ViewModel.UseOllamaCommand}" />
+            <TextBlock Text="{x:Bind ViewModel.FoundryError, Mode=OneWay}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" FontSize="12" TextWrapping="Wrap" />
+
+            <TextBlock Text="Brave Search" FontWeight="SemiBold" />
+            <PasswordBox Header="API key" Password="{x:Bind ViewModel.BraveKey, Mode=TwoWay}" PlaceholderText="{x:Bind local:SettingsFlyout.KeyPlaceholder(ViewModel.HasBraveKey), Mode=OneWay}" />
+
+            <TextBlock Text="Azure DevOps" FontWeight="SemiBold" />
+            <TextBox Header="Organization URL" Text="{x:Bind ViewModel.AzdoOrgUrl, Mode=TwoWay}" PlaceholderText="https://dev.azure.com/your-org" />
+            <TextBox Header="Project" Text="{x:Bind ViewModel.AzdoProject, Mode=TwoWay}" />
+            <PasswordBox Header="Personal access token" Password="{x:Bind ViewModel.AzdoPat, Mode=TwoWay}" PlaceholderText="{x:Bind local:SettingsFlyout.KeyPlaceholder(ViewModel.HasAzdoPat), Mode=OneWay}" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                <Button Content="Save" Style="{ThemeResource AccentButtonStyle}" Command="{x:Bind ViewModel.SaveCommand}" />
+                <Button Content="Restart to apply" Visibility="{x:Bind ViewModel.NeedsRestart, Mode=OneWay}" Click="Restart_Click" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
