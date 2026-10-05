@@ -88,7 +88,7 @@ public sealed class WasapiDualCapture(AudioInput input = AudioInput.Both) : IAud
             _loop?.StartRecording();
             _mic?.StartRecording();
             _timer = new Timer(_ => Tick(), null, PcmFrame.Duration, PcmFrame.Duration);
-            Status?.Invoke(input switch { AudioInput.Mic => "Listening (mic)", AudioInput.Remote => "Listening (remote)", _ => "Listening" });
+            Status?.Invoke(input switch { AudioInput.Mic => "Listening", AudioInput.Remote => "Listening to the call", _ => "Listening to you and the call" });
         }
         catch (Exception e)
         {

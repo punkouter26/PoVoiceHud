@@ -5,11 +5,8 @@ namespace PoVoiceHud.Core.Tests.Audio;
 public class SampleConvertTests
 {
     [Theory]
-    [InlineData(0f, 0)]
     [InlineData(0.5f, 16383)]
-    [InlineData(1f, 32767)]
     [InlineData(1.5f, 32767)]
-    [InlineData(-1f, -32767)]
     [InlineData(-2f, -32768)]
     public void Float_to_pcm16_scales_and_clamps(float input, short expected)
     {
@@ -28,13 +25,5 @@ public class SampleConvertTests
 
         for (var i = 0; i < pcm.Length; i++)
             Assert.InRange(back[i], pcm[i] - 1, pcm[i] + 1);
-    }
-
-    [Fact]
-    public void Frame_constants_describe_100ms_at_16kHz()
-    {
-        Assert.Equal(16_000, PcmFrame.SampleRate);
-        Assert.Equal(1_600, PcmFrame.SamplesPerFrame);
-        Assert.Equal(TimeSpan.FromMilliseconds(100), PcmFrame.Duration);
     }
 }

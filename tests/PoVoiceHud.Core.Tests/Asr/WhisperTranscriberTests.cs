@@ -4,16 +4,17 @@ using PoVoiceHud.Core.Tests.Vad;
 
 namespace PoVoiceHud.Core.Tests.Asr;
 
-[Trait("Category", "Model")]
+[Trait("Category", "Integration")]
+[Collection("Timing")]
 public class WhisperTranscriberTests
 {
     [Fact]
     public async Task ModelStore_downloads_once_and_is_idempotent()
     {
-        var first = await ModelStore.EnsureAsync("base.en", progress: null, TestContext.Current.CancellationToken);
+        var first = await ModelStore.EnsureAsync(progress: null, TestContext.Current.CancellationToken);
 
         var sw = Stopwatch.StartNew();
-        var second = await ModelStore.EnsureAsync("base.en", progress: null, TestContext.Current.CancellationToken);
+        var second = await ModelStore.EnsureAsync(progress: null, TestContext.Current.CancellationToken);
         sw.Stop();
 
         Assert.Equal(first, second);
@@ -25,7 +26,7 @@ public class WhisperTranscriberTests
     [Fact]
     public async Task Transcribes_the_tenant_question_within_450ms_median()
     {
-        var models = await ModelStore.EnsureAsync("base.en", progress: null, TestContext.Current.CancellationToken);
+        var models = await ModelStore.EnsureAsync(progress: null, TestContext.Current.CancellationToken);
         using var transcriber = new WhisperTranscriber(models.Whisper, threads: 8);
         var pcm = SileroVadTests.ReadFixture("tenant-question.wav");
 

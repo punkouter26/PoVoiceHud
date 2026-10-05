@@ -2,6 +2,7 @@ using PoVoiceHud.Core.Config;
 
 namespace PoVoiceHud.Core.Tests.Config;
 
+[Trait("Category", "Integration")]
 public class CredentialStoreTests
 {
     [Fact]

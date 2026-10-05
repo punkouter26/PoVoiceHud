@@ -40,7 +40,7 @@ public sealed partial class SymbolIndex
                 symbols.AddRange(Entities(path, File.ReadLines(full)));
             else
             {
-                var title = File.ReadLines(full).FirstOrDefault(l => l.StartsWith("# "));
+                var title = File.ReadLines(full).FirstOrDefault(l => l.StartsWith("# ", StringComparison.Ordinal));
                 if (title is not null) symbols.Add(new Symbol(title[2..].Trim(), SymbolKind.Adr, path));
             }
         }

@@ -34,7 +34,7 @@ Peak working set **387 MB** ✅ (Whisper base.en + Silero + WinUI). Average CPU 
 
 ## Criterion 1 — tests and coverage
 
-`dotnet test --solution PoVoiceHud.sln`: 165 tests, 0 failures, ≈ 15 s sequential.
+`dotnet test --solution PoVoiceHud.sln`: 165 tests, 0 failures, ≈ 15 s sequential. *(2026-10-05: trimmed to 140 — 100 unit + 40 integration — and only the model-timing tests run alone; ≈ 9 s. Coverage below was measured before that change.)*
 
 `dotnet test --solution PoVoiceHud.sln -- --coverage --coverage-output-format cobertura` → **PoVoiceHud.Core line 81.9 %, branch 64.4 %** ✅ (target ≥ 80 % line).
 

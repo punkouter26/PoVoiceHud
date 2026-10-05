@@ -8,5 +8,6 @@ public enum Intent
     Schema = 2,
     Docs = 4,
     Pipeline = 8,
-    FactCheck = 32,   // 16 was the removed web-answers source; value kept stable for settings.json
+    FactCheck = 32,   // 16 belonged to the removed web source and stays unused
+    Code = 64,        // research on sentences that name files or entities in the repository
 }

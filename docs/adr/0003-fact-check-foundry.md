@@ -24,5 +24,5 @@ Web evidence was removed by the owner's decision: the Brave client, `[WEB]` answ
 ## Consequences
 
 - No SDK dependency; swapping models is a settings change.
-- Privacy: in Simple mode the spoken statement and snippets leave the machine (Brave; the user's own Azure tenant or localhost). Audio never does.
+- Privacy: in Simple mode the spoken statement leaves the machine, to the user's own Azure tenant or to localhost. Audio never does.
 - Measured: Llama-3.3-70B on Foundry answers in 0.8–1.1 s; verdicts were correct on supported/contradicted/unverifiable samples.

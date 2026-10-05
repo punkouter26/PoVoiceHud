@@ -7,8 +7,6 @@
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <!-- CS0618 fires inside the XAML-generated XamlTypeInfo.g.cs for WinUIEx's obsolete Icon member. -->
-    <WarningsNotAsErrors>CS0618</WarningsNotAsErrors>
     <!-- LibraryImport (RegisterHotKey) generates unsafe stubs. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>

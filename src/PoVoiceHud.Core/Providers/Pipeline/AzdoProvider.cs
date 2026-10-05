@@ -1,6 +1,7 @@
 using Humanizer;
 using LibGit2Sharp;
-using Microsoft.VisualStudio.Services.Common;
+using System.Net;
+using System.Text.Json;
 using Polly;
 using PoVoiceHud.Core.Routing;
 
@@ -21,11 +22,11 @@ public sealed class AzdoProvider(IBuildClient client, Func<string?> repoRoot, Re
         {
             runs = await _pipeline.ExecuteAsync(async token => await client.GetRecentBuildsAsync(branch, 3, token), ct);
         }
-        catch (VssUnauthorizedException)
+        catch (HttpRequestException e) when (e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
             return Card("AzDO auth failed — check the PAT in Settings.", 0.3);
         }
-        catch (Exception e) when (e is HttpRequestException or VssServiceException)
+        catch (Exception e) when (e is HttpRequestException or JsonException)
         {
             return Card($"AzDO unreachable: {e.Message}", 0.2);
         }

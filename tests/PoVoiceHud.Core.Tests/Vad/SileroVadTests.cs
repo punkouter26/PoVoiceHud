@@ -4,7 +4,8 @@ using PoVoiceHud.Core.Vad;
 
 namespace PoVoiceHud.Core.Tests.Vad;
 
-[Trait("Category", "Model")]
+[Trait("Category", "Integration")]
+[Collection("Timing")]
 public class SileroVadTests
 {
     internal static readonly string ModelPath = Path.Combine(
@@ -12,11 +13,7 @@ public class SileroVadTests
 
     internal static async Task EnsureModelAsync()
     {
-        if (File.Exists(ModelPath)) return;
-        Directory.CreateDirectory(Path.GetDirectoryName(ModelPath)!);
-        using var http = new HttpClient();
-        await File.WriteAllBytesAsync(ModelPath, await http.GetByteArrayAsync(
-            "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"));
+        if (!File.Exists(ModelPath)) await Core.Asr.ModelStore.EnsureAsync(progress: null, CancellationToken.None);   // pinned and hash-checked
     }
 
     internal static short[] ReadFixture(string name)

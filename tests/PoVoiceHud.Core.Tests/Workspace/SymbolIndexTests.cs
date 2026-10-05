@@ -4,6 +4,7 @@ using PoVoiceHud.Core.Workspace;
 
 namespace PoVoiceHud.Core.Tests.Workspace;
 
+[Trait("Category", "Integration")]
 public class SymbolIndexTests
 {
     [Fact]

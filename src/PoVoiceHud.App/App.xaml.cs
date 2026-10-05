@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
@@ -6,23 +8,38 @@ using Microsoft.UI.Xaml;
 using PoVoiceHud.App.Interop;
 using PoVoiceHud.Core;
 using PoVoiceHud.Core.Asr;
+using PoVoiceHud.Core.Audio;
 using PoVoiceHud.Core.Config;
+using PoVoiceHud.Core.Providers;
+using PoVoiceHud.Core.Providers.FactCheck;
 using PoVoiceHud.Core.ViewModels;
+using PoVoiceHud.Core.Workspace;
 using WinUIEx;
 
 namespace PoVoiceHud.App;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The application object lives as long as the process; its hotkeys, docking and container are released in OnClosed.")]
 public partial class App : Application
 {
+    private const string RecheckHotkey = "Ctrl+Alt+R";
+
     private static readonly string WindowFile = Path.Combine(AppPaths.DataDir, "window.json");
+    private static readonly string SessionsDir = Path.Combine(AppPaths.DataDir, "sessions");
+    private static readonly HttpClient Http = new();
 
     // WinUIEx persists window placement through this dictionary (string values only);
     // unpackaged apps have no ApplicationData, so we back it with a JSON file.
     private readonly Dictionary<string, object> _placement;
     private MainWindow? _window;
     private ServiceProvider? _container;
-    private GlobalHotkey? _hotkey;
+    private HudPipeline? _pipeline;
+    private int _run;   // bumped by every (re)start, so a start that was overtaken throws its pipeline away
+    private string? _ollamaModel;
+    private GlobalHotkey? _muteKey;
+    private GlobalHotkey? _recheckKey;
     private WindowDocking? _docking;
+    private DispatcherTimer? _meter;
 
     public App()
     {
@@ -31,7 +48,11 @@ public partial class App : Application
         UnhandledException += (_, e) =>
         {
             File.AppendAllText(Path.Combine(AppPaths.DataDir, "crash.log"), $"{DateTimeOffset.Now:O} {e.Exception}\n\n");
-            e.Handled = true;
+            // Only failures known to leave the app usable are survived (a file, the network, a Windows API call).
+            // Anything else is a bug: it is logged above and allowed to end the process rather than run on in an unknown state.
+            e.Handled = e.Exception is IOException or UnauthorizedAccessException or HttpRequestException or TimeoutException
+                or OperationCanceledException or Win32Exception or COMException;
+            if (e.Handled) _window?.ViewModel.SetStatus($"Error: {e.Exception.Message} (details in crash.log)");
         };
         Dictionary<string, string>? saved = null;
         try
@@ -48,69 +69,113 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        var firstRun = !File.Exists(SettingsStore.DefaultPath);
         var (settings, warning) = SettingsStore.Load(SettingsStore.DefaultPath);
         var viewModel = new HudViewModel(TimeSpan.FromSeconds(settings.AutoExpandSeconds), settings.RepoPath, OpenAsync);
+        viewModel.Apply(settings);
         _window = new MainWindow(viewModel);
         _window.Closed += OnClosed;
         _window.Activate();
         _docking = new WindowDocking(_window);
-        _hotkey = new GlobalHotkey(_window, () => _window.DispatcherQueue.TryEnqueue(() => viewModel.ToggleMuteCommand.Execute(null)));
-        viewModel.MuteHint = _hotkey.Binding is { } binding ? $"Mute: {binding}" : "Mute: click the dot (hotkeys taken)";
+        BindHotkeys();
+        AttachSettings(settings);
 
-        _window.AttachSettings(new SettingsViewModel(settings,
-            readSecret: CredentialStore.Read,
-            writeSecret: CredentialStore.Write,
-            pickFolder: PickFolderAsync,
-            save: s => SettingsStore.Save(s, SettingsStore.DefaultPath)));
+        viewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(HudViewModel.IsMuted) && _pipeline is { } pipeline) pipeline.IsMuted = viewModel.IsMuted;
+        };
+        _meter = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        _meter.Tick += (_, _) =>
+        {
+            if (_pipeline is { } pipeline) viewModel.MicLevel = pipeline.Level;
+        };
+        _meter.Start();
 
-        var args2 = Environment.GetCommandLineArgs();
-        if (args2.Contains("--pin")) viewModel.ToggleExpandCommand.Execute(null);   // start pinned open (manual testing)
-        if (args2.Contains("--demo"))
+#if DEBUG
+        // Layout checks without a microphone: --demo seeds sample cards (add --settings to show the settings instead), --pin starts expanded.
+        var flags = Environment.GetCommandLineArgs();
+        if (flags.Contains("--pin")) viewModel.ToggleExpandCommand.Execute(null);
+        if (flags.Contains("--demo"))
         {
             _window.SeedDemo();
-            _window.ShowSettings();
+            if (flags.Contains("--settings")) _window.ShowSettings(everything: flags.Contains("--all"));
             return;
         }
+#endif
         if (warning is not null) viewModel.SetStatus(warning);
-        _ = StartAsync(settings, viewModel);
+        _ = StartAsync(settings, firstRun);
     }
 
-    private async Task StartAsync(Settings settings, HudViewModel viewModel)
+    private async Task StartAsync(Settings settings, bool firstRun)
     {
+        var run = ++_run;
         var window = _window!;
-        void Status(string text) => window.DispatcherQueue.TryEnqueue(() => viewModel.SetStatus($"{ModeLabel(settings)} · {text}"));
+        var viewModel = window.ViewModel;
+        var note = "";   // a standing problem (repository out of date or unavailable) that every status keeps showing
+        void Status(string text) => window.DispatcherQueue.TryEnqueue(() => viewModel.SetStatus(text + note));
         try
         {
             Status("Checking models…");
-            var models = await ModelStore.EnsureAsync(settings.WhisperModel,
-                new Progress<double>(p => Status($"Downloading models… {p:P0}")), CancellationToken.None);
+            var models = await ModelStore.EnsureAsync(new Progress<double>(p => Status($"Downloading models… {p:P0}")), CancellationToken.None);
+
+            _ollamaModel = await FoundryClient.OllamaModelAsync(Http, CancellationToken.None);
+            if (firstRun && settings.FoundryEndpoint is null && _ollamaModel is not null)
+            {
+                // Nothing configured yet and a local model is already running: use it, so the first sentence gets a verdict.
+                settings = settings with { FoundryEndpoint = FoundryClient.OllamaEndpoint.ToString(), FoundryModel = _ollamaModel };
+                SettingsStore.Save(settings, SettingsStore.DefaultPath);
+                AttachSettings(settings);
+            }
+
+            if (settings is { Mode: HudMode.Repo, RepoPath: { } location })
+            {
+                // A URL is cloned (first time) or refreshed into the app's cache; a folder is used where it is.
+                Status(RepoSource.IsRemote(location) ? "Fetching the repository…" : "Opening the repository…");
+                try
+                {
+                    string? stale = null;
+                    var root = await Task.Run(() => RepoSource.EnsureLocal(location, CredentialStore.Read(CredentialStore.AzdoPat), out stale));
+                    settings = settings with { RepoPath = root };
+                    if (stale is not null) note = $" ({stale})";
+                }
+                catch (Exception e) when (e is LibGit2Sharp.LibGit2SharpException or IOException or UnauthorizedAccessException)
+                {
+                    // Fact checking does not need the repository, so carry on without it and keep saying why.
+                    settings = settings with { RepoPath = null };
+                    note = $" (repository unavailable: {e.Message.TrimEnd('.')})";
+                }
+                viewModel.Apply(settings);   // cards label their file links relative to the folder actually read
+            }
 
             Status("Loading models…");
             var services = new ServiceCollection();
             services.AddLogging(b => b.AddDebug());
-            services.AddPoVoiceHudCore(settings, models);
-            _container = services.BuildServiceProvider();
+            services.AddSingleton(Http);
+            services.AddPoVoiceHudCore(settings, models, _ollamaModel);
+            var container = services.BuildServiceProvider();
 
-            // Resolving the pipeline loads Whisper (seconds for small.en) and the workspace walks the repo: keep both off the UI thread.
+            // Resolving the pipeline loads Whisper and the workspace walks the repo: keep both off the UI thread.
             var pipeline = await Task.Run(() =>
             {
-                _ = _container.GetService<Core.Workspace.Workspace>();
-                return _container.GetRequiredService<HudPipeline>();
+                _ = container.GetService<Core.Workspace.Workspace>();
+                return container.GetRequiredService<HudPipeline>();
             });
-            pipeline.IsMuted = viewModel.IsMuted;   // the user may have muted during the download
-            viewModel.PropertyChanged += (_, e) =>
+            if (run != _run)
             {
-                if (e.PropertyName == nameof(HudViewModel.IsMuted)) pipeline.IsMuted = viewModel.IsMuted;
-            };
+                await Task.Run(container.Dispose);   // settings were saved again while this one was loading
+                return;
+            }
+            (_container, _pipeline) = (container, pipeline);
+            pipeline.IsMuted = viewModel.IsMuted;   // the user may have muted during the download
 
-            var meter = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-            meter.Tick += (_, _) => viewModel.MicLevel = pipeline.Level;
-            meter.Start();
-            window.Closed += (_, _) => meter.Stop();
-
-            _ = Drain(pipeline.Status, s => viewModel.SetStatus($"{ModeLabel(settings)} · {s}"));
-            _ = Drain(pipeline.Transcript, viewModel.AddTranscript);
-            _ = Drain(pipeline.Insights, insights => viewModel.Push(insights, DateTimeOffset.Now));
+            _ = Drain(pipeline.Status, s => viewModel.SetStatus(s + note));
+            _ = Drain(pipeline.Transcript, line =>
+            {
+                viewModel.AddTranscript(line);
+                Log(new { at = DateTimeOffset.Now, source = line.Source.ToString(), heard = line.Text });
+            });
+            _ = Drain(pipeline.Insights, OnInsights);
+            _ = Drain(pipeline.Checking, busy => viewModel.IsChecking = busy);
             pipeline.Start();
         }
         catch (Exception e)
@@ -119,15 +184,71 @@ public partial class App : Application
         }
     }
 
+    /// <summary>Saving settings lands here: persist, then swap the running pipeline for one built from them.</summary>
+    private async Task ApplyAsync(Settings settings)
+    {
+        var viewModel = _window!.ViewModel;
+        viewModel.Apply(settings);
+        viewModel.IsChecking = false;
+        viewModel.MicLevel = 0;
+
+        var old = _container;
+        (_container, _pipeline) = (null, null);
+        _run++;   // a start still loading must not install its pipeline after this point
+        if (old is not null) await Task.Run(old.Dispose);   // stops capture and unloads Whisper; not for the UI thread
+        await StartAsync(settings, firstRun: false);
+    }
+
+    private void OnInsights(Routed routed)
+    {
+        _window!.ViewModel.Push(routed.Insights, DateTimeOffset.Now, routed.Line.Source);
+        if (routed.Insights.Any(i => i.Verdict == Verdict.Contradicted)) Earcon.Play();
+        foreach (var insight in routed.Insights)
+            Log(new { at = DateTimeOffset.Now, card = insight.Headline, answer = insight.Answer, verdict = insight.Verdict?.ToString(), link = insight.Link });
+    }
+
+    /// <summary>One JSON object per line in sessions\{date}.jsonl: what was heard and what the HUD answered.</summary>
+    private static void Log(object entry)
+    {
+        try
+        {
+            Directory.CreateDirectory(SessionsDir);
+            File.AppendAllText(Path.Combine(SessionsDir, $"{DateTime.Now:yyyy-MM-dd}.jsonl"), JsonSerializer.Serialize(entry) + "\n");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // the log is a convenience: a locked or full disk must not interrupt the call
+        }
+    }
+
+    private void BindHotkeys()
+    {
+        var window = _window!;
+        var viewModel = window.ViewModel;
+        _muteKey = new GlobalHotkey(window, 1, Settings.MuteHotkeys,
+            () => window.DispatcherQueue.TryEnqueue(() => viewModel.ToggleMuteCommand.Execute(null)));
+        _recheckKey = new GlobalHotkey(window, 2, [RecheckHotkey], () => _pipeline?.Recheck());
+        viewModel.MuteHint = (_muteKey.Binding is { } mute ? $"Mute: {mute}" : "Mute: click the microphone (hotkeys taken)")
+                             + (_recheckKey.Binding is { } recheck ? $" · Check the last sentence again: {recheck}" : "");
+    }
+
+    private void AttachSettings(Settings settings) => _window!.AttachSettings(new SettingsViewModel(settings,
+        readSecret: CredentialStore.Read,
+        writeSecret: CredentialStore.Write,
+        pickFolder: PickFolderAsync,
+        save: s =>
+        {
+            SettingsStore.Save(s, SettingsStore.DefaultPath);
+            _ = ApplyAsync(s);
+        },
+        connect: (endpoint, model, key) => new FoundryClient(Http, endpoint, model, key),
+        ollamaModel: () => _ollamaModel));
+
     private async Task Drain<T>(ChannelReader<T> reader, Action<T> apply)
     {
         await foreach (var item in reader.ReadAllAsync())
             _window!.DispatcherQueue.TryEnqueue(() => apply(item));
     }
-
-    private static string ModeLabel(Settings settings) => settings.Mode == HudMode.Simple
-        ? "Mic · Fact check"
-        : $"{settings.AudioInput} · {settings.EnabledSources}";
 
     private async Task<string?> PickFolderAsync()
     {
@@ -147,7 +268,9 @@ public partial class App : Application
     private void OnClosed(object sender, WindowEventArgs args)
     {
         File.WriteAllText(WindowFile, JsonSerializer.Serialize(_placement.ToDictionary(p => p.Key, p => p.Value.ToString())));
-        _hotkey?.Dispose();
+        _meter?.Stop();
+        _muteKey?.Dispose();
+        _recheckKey?.Dispose();
         _docking?.Dispose();
         _container?.Dispose();
     }

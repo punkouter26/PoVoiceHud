@@ -14,7 +14,6 @@
     <PackageVersion Include="LibGit2Sharp" Version="0.32.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <PackageVersion Include="Markdig" Version="1.4.0" />
-    <PackageVersion Include="Microsoft.TeamFoundationServer.Client" Version="20.279.0-preview" />
     <!-- Helpers -->
     <PackageVersion Include="Humanizer.Core" Version="3.0.10" />
     <PackageVersion Include="Raffinert.FuzzySharp" Version="2.0.3" />
@@ -25,7 +24,6 @@
     <!-- Tests -->
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.11.2" />
-    <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="Verify.XunitV3" Version="31.25.0" />
   </ItemGroup>
 </Project>

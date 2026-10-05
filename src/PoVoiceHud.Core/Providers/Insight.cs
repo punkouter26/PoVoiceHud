@@ -7,6 +7,9 @@ public sealed record Jump(string AbsolutePath, int Line)
     public Uri Uri => new($"vscode://file/{AbsolutePath.Replace('\\', '/')}:{Line}");
 }
 
+/// <summary>A fact-check outcome; drives the card colour, the session tally and the contradiction sound.</summary>
+public enum Verdict { Supported, Contradicted, Unverified }
+
 /// <summary>One HUD card: Headline → one-sentence Answer → Jump buttons. Confidence orders cards; Stale carries the ⚠ text.</summary>
 public sealed record Insight(
     Intent Intent,
@@ -15,6 +18,8 @@ public sealed record Insight(
     IReadOnlyList<Jump> Jumps,
     double Confidence = 1,
     string? Stale = null,
-    Uri? Link = null);
+    Uri? Link = null,
+    Verdict? Verdict = null);
 
-public sealed record Query(string Text, IReadOnlyList<SymbolMatch> Symbols, Intent Intents);
+/// <summary>Context is the sentences heard just before (to resolve "it"/"they"); Fresh bypasses provider caches.</summary>
+public sealed record Query(string Text, IReadOnlyList<SymbolMatch> Symbols, Intent Intents, IReadOnlyList<string>? Context = null, bool Fresh = false);

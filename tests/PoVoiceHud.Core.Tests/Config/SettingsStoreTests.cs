@@ -13,7 +13,7 @@ public class SettingsStoreTests : IDisposable
     {
         var s = new Settings
         {
-            RepoPath = @"C:\src\pmis", WhisperModel = "tiny.en", WhisperThreads = 4, AzdoOrgUrl = "https://dev.azure.com/acme", AzdoProject = "PMIS", AutoExpandSeconds = 30,
+            RepoPath = @"C:\src\pmis", WhisperThreads = 4, AzdoOrgUrl = "https://dev.azure.com/acme", AzdoProject = "PMIS", AutoExpandSeconds = 30,
             Mode = HudMode.Repo, AudioInput = AudioInput.Both, EnabledSources = Intent.Git | Intent.Schema | Intent.FactCheck,
             FoundryEndpoint = "https://acme.services.ai.azure.com", FoundryModel = "Llama-3.3-70B-Instruct",
         };
@@ -33,7 +33,7 @@ public class SettingsStoreTests : IDisposable
 
         Assert.Equal(new Settings(), loaded);
         Assert.Null(warning);
-        Assert.Equal("base.en", loaded.WhisperModel);
+        Assert.InRange(loaded.WhisperThreads, 2, 8);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public class SettingsStoreTests : IDisposable
     {
         var repo = new Settings().ApplyMode(HudMode.Repo);
         Assert.Equal(AudioInput.Both, repo.AudioInput);
-        Assert.Equal(Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline, repo.EnabledSources);
+        Assert.Equal(Intent.FactCheck | Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline | Intent.Code, repo.EnabledSources);   // all of Simple, plus the repo
 
         var simple = repo.ApplyMode(HudMode.Simple);
         Assert.Equal(AudioInput.Mic, simple.AudioInput);

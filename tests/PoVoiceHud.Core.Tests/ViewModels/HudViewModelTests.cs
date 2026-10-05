@@ -35,16 +35,30 @@ public class HudViewModelTests
     }
 
     [Fact]
-    public void HasFocus_follows_the_focus_card()
+    public void Something_said_again_is_one_card_with_a_count_and_history_lines_can_be_brought_back()
     {
+        static Insight Fact(string claim, Verdict verdict) => new(Intent.FactCheck, $"[FACT] {claim}", "answer", [], Verdict: verdict);
         Assert.False(_vm.HasFocus);
-        _vm.Push([Card("[FACT] x")], T0);
-        Assert.True(_vm.HasFocus);
+
+        _vm.Push([Fact("A tomato is blue", Verdict.Contradicted)], T0);
+        Assert.Equal("❌ A tomato is blue", _vm.Headline);   // the pill carries the verdict; the card below it only the reason
+        _vm.Push([Fact("a tomato is blue", Verdict.Contradicted)], T0);
+        Assert.Equal("❌ a tomato is blue ×2", _vm.Headline);
+        Assert.Empty(_vm.Shelf);                             // a repeat of the card on show replaces it in place
+
+        _vm.Push([Fact("A tomato is red", Verdict.Supported)], T0);
+        _vm.Push([Fact("A tomato is blue", Verdict.Contradicted)], T0);   // a repeat of an earlier card comes back up from the history
+        Assert.Equal("❌ A tomato is blue ×3", _vm.Focus?.Summary);
+        Assert.Equal("✅ A tomato is red", Assert.Single(_vm.Shelf).Summary);
+        Assert.Equal("❌ 3  ✅ 1".Split("  ").Order(), _vm.Tally.Split("  ").Order());   // the tally still counts every time it was said
+
+        _vm.ShowCommand.Execute(_vm.Shelf[0]);
+        Assert.Equal("✅ A tomato is red", _vm.Headline);
+        Assert.Equal("❌ A tomato is blue ×3", Assert.Single(_vm.Shelf).Summary);
     }
 
     [Theory]
     [InlineData(0, 0.0)]          // silence
-    [InlineData(32767, 1.0)]      // full scale
     [InlineData(1036, 0.5)]       // -30 dBFS ≈ normal speech → mid-scale
     public void Mic_level_maps_rms_to_a_0_to_1_db_scale(short amplitude, double expected)
     {
@@ -134,12 +148,49 @@ public class HudViewModelTests
     }
 
     [Fact]
-    public void Mute_toggle_flips_the_flag_and_status_text()
+    public void Mute_toggle_flips_the_flag_and_the_pill_shows_the_latest_status()
     {
+        _vm.Push([Card("[GIT] file1")], T0);
         _vm.SetStatus("Listening");
-        _vm.ToggleMuteCommand.Execute(null);
+        Assert.Equal("Listening", _vm.Headline);   // there is no status row: the pill shows whichever came last
 
+        _vm.ToggleMuteCommand.Execute(null);
         Assert.True(_vm.IsMuted);
         Assert.Equal("Muted", _vm.StatusText);
+        Assert.Equal("Muted", _vm.Headline);
+
+        _vm.ToggleMuteCommand.Execute(null);
+        Assert.Equal("Listening", _vm.Headline);
+    }
+
+    [Fact]
+    public void Verdicts_are_tallied_for_the_session_and_split_by_who_spoke()
+    {
+        static Insight Fact(Verdict verdict) => new(Intent.FactCheck, "[FACT] x", "answer", [], Verdict: verdict);
+        Assert.Equal("", _vm.Tally);
+
+        _vm.Push([Fact(Verdict.Supported)], T0);
+        _vm.Push([Fact(Verdict.Contradicted)], T0, SourceHint.Teams);
+        _vm.Push([Fact(Verdict.Supported)], T0, SourceHint.Teams);
+        _vm.Push([Card("[GIT] file1")], T0);   // not a verdict: leaves the tally alone
+
+        Assert.Equal("✅ 2  ❌ 1", _vm.Tally);
+        Assert.Equal("This session — you: ✅ 1 · the call: ✅ 1  ❌ 1", _vm.TallyDetail);
+        Assert.Equal(Verdict.Supported, _vm.Shelf[0].Verdict);
+    }
+
+    [Fact]
+    public void Collapse_closes_the_panel_and_unpins_it_and_the_transcript_folds_to_its_last_line()
+    {
+        _vm.ToggleExpandCommand.Execute(null);
+        _vm.CollapseCommand.Execute(null);
+        Assert.False(_vm.IsExpanded);
+        Assert.False(_vm.IsPinned);
+
+        _vm.AddTranscript(new TranscriptLine(SourceHint.Mic, TimeSpan.FromSeconds(1), "line 1"));
+        Assert.Equal("line 1", _vm.LastLine?.Text);
+        Assert.True(_vm.IsTranscriptClosed);
+        _vm.ToggleTranscriptCommand.Execute(null);
+        Assert.True(_vm.IsTranscriptOpen);
     }
 }

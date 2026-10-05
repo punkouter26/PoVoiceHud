@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:winuiex="using:WinUIEx"
     xmlns:local="using:PoVoiceHud.App"
+    xmlns:core="using:PoVoiceHud.Core"
     xmlns:views="using:PoVoiceHud.App.Views"
     xmlns:vm="using:PoVoiceHud.Core.ViewModels"
     Title="PoVoiceHud"
@@ -19,53 +20,135 @@
     <winuiex:WindowEx.SystemBackdrop>
         <DesktopAcrylicBackdrop />
     </winuiex:WindowEx.SystemBackdrop>
-    <Grid x:Name="Root" PointerEntered="Root_PointerEntered" PointerExited="Root_PointerExited">
+    <Grid x:Name="Root" PointerEntered="Root_PointerEntered" PointerExited="Root_PointerExited" KeyboardAcceleratorPlacementMode="Hidden">
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="Escape" Invoked="Escape_Invoked" />
+            <!-- The pill itself is the expand control for the mouse; this is the same thing from the keyboard. -->
+            <KeyboardAccelerator Key="E" Modifiers="Control" Invoked="Toggle_Invoked" />
+        </Grid.KeyboardAccelerators>
         <Grid.RowDefinitions>
             <RowDefinition Height="44" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Pill (collapsed state) -->
-        <Grid Padding="12,0" ColumnSpacing="10" Background="Transparent" Tapped="Pill_Tapped">
+        <!-- Pill: mic, headline (latest card or status), session tally, settings, close. Clicking the bare pill opens and closes the panel. -->
+        <Grid Padding="8,0" ColumnSpacing="6" Background="Transparent" Tapped="Pill_Tapped">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Button Background="Transparent" BorderThickness="0" Padding="4" Command="{x:Bind ViewModel.ToggleMuteCommand}" ToolTipService.ToolTip="{x:Bind ViewModel.MuteHint, Mode=OneWay}">
-                <Ellipse x:Name="RecDot" Width="10" Height="10" Fill="{x:Bind local:MainWindow.RecBrush(ViewModel.IsMuted), Mode=OneWay}" />
+            <!-- Microphone plus a five-bar level meter: the bars light up left to right as you speak. -->
+            <Button x:Name="MicButton" Style="{StaticResource HudIconButton}" Width="NaN" Padding="6,0" Command="{x:Bind ViewModel.ToggleMuteCommand}"
+                    AutomationProperties.Name="{x:Bind local:MainWindow.MicName(ViewModel.IsMuted), Mode=OneWay}"
+                    ToolTipService.ToolTip="{x:Bind local:MainWindow.MicTip(ViewModel.StatusText, ViewModel.MuteHint), Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Grid>
+                        <FontIcon Glyph="&#xE720;" FontSize="14" Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                                  Visibility="{x:Bind local:MainWindow.Not(ViewModel.IsMuted), Mode=OneWay}" />
+                        <FontIcon Glyph="&#xEC54;" FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                  Visibility="{x:Bind ViewModel.IsMuted, Mode=OneWay}" />
+                    </Grid>
+                    <!-- Each bar is dim until the level passes its threshold (see ShowLevel). -->
+                    <StackPanel x:Name="LevelBars" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Height="18"
+                                AutomationProperties.Name="Microphone level">
+                        <StackPanel.Resources>
+                            <Style TargetType="Rectangle">
+                                <Setter Property="Width" Value="4" />
+                                <Setter Property="RadiusX" Value="1" />
+                                <Setter Property="RadiusY" Value="1" />
+                                <Setter Property="VerticalAlignment" Value="Bottom" />
+                                <Setter Property="Fill" Value="{ThemeResource SystemFillColorSuccessBrush}" />
+                                <Setter Property="Opacity" Value="0.2" />
+                            </Style>
+                        </StackPanel.Resources>
+                        <Rectangle Height="6" />
+                        <Rectangle Height="9" />
+                        <Rectangle Height="12" />
+                        <Rectangle Height="15" />
+                        <Rectangle Height="18" />
+                    </StackPanel>
+                </StackPanel>
             </Button>
-            <!-- Mic level: fills left→right from −60 dBFS to 0 dBFS, updated every 100 ms -->
-            <ProgressBar Grid.Column="1" Width="64" Height="6" Minimum="0" Maximum="1" VerticalAlignment="Center"
-                         Value="{x:Bind ViewModel.MicLevel, Mode=OneWay}" ToolTipService.ToolTip="Mic level" />
-            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" VerticalAlignment="Center"
-                       FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-            <Button Grid.Column="3" Command="{x:Bind ViewModel.ToggleExpandCommand}" Background="Transparent" BorderThickness="0"
-                    Padding="6,2" Content="{x:Bind local:MainWindow.ExpandGlyph(ViewModel.IsExpanded), Mode=OneWay}" FontSize="12" />
-            <Button Grid.Column="4" x:Name="SettingsButton" Background="Transparent" BorderThickness="0" Padding="6,2" Content="⚙" FontSize="13" />
+            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" Style="{StaticResource HudHeadline}"
+                       ToolTipService.ToolTip="Click to open or close the panel (Ctrl+E)" />
+            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.Tally, Mode=OneWay}" Style="{StaticResource HudCaption}" VerticalAlignment="Center"
+                       AutomationProperties.Name="{x:Bind ViewModel.TallyDetail, Mode=OneWay}"
+                       ToolTipService.ToolTip="{x:Bind ViewModel.TallyDetail, Mode=OneWay}" />
+            <Button Grid.Column="3" x:Name="SettingsButton" Style="{StaticResource HudIconButton}"
+                    AutomationProperties.Name="Settings" ToolTipService.ToolTip="Settings">
+                <FontIcon Glyph="&#xE713;" FontSize="14" />
+            </Button>
+            <Button Grid.Column="4" Style="{StaticResource HudIconButton}" Click="Close_Click"
+                    AutomationProperties.Name="Close PoVoiceHud" ToolTipService.ToolTip="Close PoVoiceHud">
+                <FontIcon Glyph="&#xE8BB;" FontSize="12" />
+            </Button>
+
+            <!-- Bottom edge of the pill: the focus card's verdict colour, or a running bar while a sentence is being checked -->
+            <Border Grid.ColumnSpan="5" Height="2" Margin="-8,0" VerticalAlignment="Bottom"
+                    Background="{x:Bind views:InsightCard.EdgeBrush(ViewModel.Focus), Mode=OneWay}" />
+            <ProgressBar Grid.ColumnSpan="5" Margin="-8,0" VerticalAlignment="Bottom" IsIndeterminate="True"
+                         AutomationProperties.Name="Checking the last sentence"
+                         Visibility="{x:Bind ViewModel.IsChecking, Mode=OneWay}" />
         </Grid>
 
-        <!-- Expanded stack -->
-        <StackPanel Grid.Row="1" x:Name="Expanded" Visibility="{x:Bind ViewModel.IsExpanded, Mode=OneWay}" Padding="8,0,8,10" Spacing="8">
-            <views:StatusBar ViewModel="{x:Bind ViewModel}" />
-            <views:FocusCard Card="{x:Bind ViewModel.Focus, Mode=OneWay}" Visibility="{x:Bind ViewModel.HasFocus, Mode=OneWay}" />
+        <!-- Expanded stack; the window grows and shrinks to exactly this panel's height -->
+        <StackPanel Grid.Row="1" x:Name="Expanded" Visibility="{x:Bind ViewModel.IsExpanded, Mode=OneWay}" VerticalAlignment="Top"
+                    Padding="8,4,8,8" Spacing="8" SizeChanged="Expanded_SizeChanged">
+            <ContentControl Content="{x:Bind ViewModel.Focus, Mode=OneWay}" Visibility="{x:Bind ViewModel.HasFocus, Mode=OneWay}"
+                            HorizontalContentAlignment="Stretch" IsTabStop="False">
+                <ContentControl.ContentTransitions>
+                    <TransitionCollection>
+                        <EntranceThemeTransition FromVerticalOffset="10" />
+                    </TransitionCollection>
+                </ContentControl.ContentTransitions>
+                <ContentControl.ContentTemplate>
+                    <DataTemplate x:DataType="vm:InsightCardViewModel">
+                        <views:InsightCard Card="{x:Bind}" />
+                    </DataTemplate>
+                </ContentControl.ContentTemplate>
+            </ContentControl>
             <TextBlock Text="Say a full sentence that states a fact — it will be checked here." Visibility="{x:Bind ViewModel.NoFocus, Mode=OneWay}"
-                       FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="4,8" />
-            <ScrollViewer HorizontalScrollMode="Enabled" HorizontalScrollBarVisibility="Hidden" VerticalScrollMode="Disabled">
-                <ItemsRepeater ItemsSource="{x:Bind ViewModel.Shelf}">
-                    <ItemsRepeater.Layout>
-                        <StackLayout Orientation="Horizontal" Spacing="8" />
-                    </ItemsRepeater.Layout>
-                    <ItemsRepeater.ItemTemplate>
-                        <DataTemplate x:DataType="vm:InsightCardViewModel">
-                            <views:ShelfCard Card="{x:Bind}" />
-                        </DataTemplate>
-                    </ItemsRepeater.ItemTemplate>
-                </ItemsRepeater>
-            </ScrollViewer>
-            <views:TranscriptStrip ViewModel="{x:Bind ViewModel}" />
+                       Style="{StaticResource HudCaption}" TextWrapping="Wrap" Margin="4,4" />
+
+            <!-- Earlier cards, one line each; a click brings that card back as the main one -->
+            <ItemsRepeater ItemsSource="{x:Bind ViewModel.Shelf}" Visibility="{x:Bind ViewModel.HasShelf, Mode=OneWay}">
+                <ItemsRepeater.Layout>
+                    <StackLayout />
+                </ItemsRepeater.Layout>
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vm:InsightCardViewModel">
+                        <Button Tag="{x:Bind}" Click="History_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                Background="Transparent" BorderThickness="0" Padding="8,3"
+                                AutomationProperties.Name="{x:Bind Summary}" ToolTipService.ToolTip="{x:Bind Answer}">
+                            <TextBlock Text="{x:Bind Summary}" Style="{StaticResource HudCaption}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                        </Button>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+
+            <!-- Transcript: the last line, or the recent lines after a click -->
+            <Button Command="{x:Bind ViewModel.ToggleTranscriptCommand}"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,6"
+                    AutomationProperties.Name="Transcript — show or hide the recent lines"
+                    ToolTipService.ToolTip="Click to show or hide the recent lines">
+                <Grid>
+                    <TextBlock Text="{x:Bind local:MainWindow.Line(ViewModel.LastLine), Mode=OneWay}" Style="{StaticResource HudMono}"
+                               Visibility="{x:Bind ViewModel.IsTranscriptClosed, Mode=OneWay}" />
+                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.Transcript}" Visibility="{x:Bind ViewModel.IsTranscriptOpen, Mode=OneWay}">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Spacing="2" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="core:TranscriptLine">
+                                <TextBlock Text="{x:Bind local:MainWindow.Stamped(Source, At, Text)}" Style="{StaticResource HudMono}" />
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </Grid>
+            </Button>
         </StackPanel>
     </Grid>
 </winuiex:WindowEx>

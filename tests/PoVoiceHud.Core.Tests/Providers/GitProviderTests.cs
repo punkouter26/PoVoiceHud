@@ -6,6 +6,7 @@ using PoVoiceHud.Core.Workspace;
 
 namespace PoVoiceHud.Core.Tests.Providers;
 
+[Trait("Category", "Integration")]
 public class GitProviderTests
 {
     private readonly CancellationToken _ct = TestContext.Current.CancellationToken;

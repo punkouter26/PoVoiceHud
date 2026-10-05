@@ -10,7 +10,7 @@ The original architecture sketch listed a local LLM (Ollama/Phi) as the router. 
 
 ## Decision
 
-Routing is rule-based (`src/PoVoiceHud.Core/Routing`): a filler/word-count noise filter, a keyword table per intent (`IntentClassifier`), a fuzzy symbol matcher over the repo's files, EF entities and ADR titles (`SymbolMatcher`, FuzzySharp token ratio ≥ 80), and a per-source enable mask from Settings. Declarative statements go to the fact checker when that source is on; symbol-less questions go to the web provider when it is on.
+Routing is rule-based (`src/PoVoiceHud.Core/Routing`): a filler/word-count noise filter, a keyword table per intent (`IntentClassifier`), a fuzzy symbol matcher over the repo's files, EF entities and ADR titles (`SymbolMatcher`, FuzzySharp token ratio ≥ 80), and a per-source enable mask from Settings. Declarative statements go to the fact checker when that source is on; a question no repo source claims is dropped (the web provider it used to fall back to was removed on 2026-10-01).
 
 ## Consequences
 

@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace PoVoiceHud.Core.Routing;
 
-/// <summary>Keyword rules from SPEC §3.3. Web is not decided here: it needs the symbol index (see Router).</summary>
+/// <summary>Keyword rules from SPEC §3.3.</summary>
 public static class IntentClassifier
 {
     private static readonly (Intent Intent, Regex Rule)[] Rules =

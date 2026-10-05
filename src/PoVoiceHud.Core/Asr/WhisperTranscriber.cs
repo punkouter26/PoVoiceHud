@@ -48,6 +48,8 @@ public sealed class WhisperTranscriber : ITranscriber
 
     public void Dispose()
     {
+        // A transcription cancelled by the pipeline may still be unwinding inside the native processor.
+        _one.Wait(TimeSpan.FromSeconds(5));
         _short.Dispose();
         _long.Dispose();
         _factory.Dispose();

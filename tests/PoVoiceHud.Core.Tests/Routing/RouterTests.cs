@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using PoVoiceHud.Core.Providers;
-using PoVoiceHud.Core.Providers.Fakes;
 using PoVoiceHud.Core.Routing;
 using PoVoiceHud.Core.Tests.Fixtures;
 using PoVoiceHud.Core.Workspace;
@@ -155,10 +154,10 @@ public class RouterTests
     }
 
     [Fact]
-    public async Task Unconfigured_fake_answers_with_low_confidence()
+    public async Task An_unconfigured_source_answers_with_a_low_confidence_how_to_card()
     {
-        var fake = FakeProvider.Unconfigured(Intent.Pipeline, "AzDO not configured");
-        var insight = await fake.QueryAsync(new Query("did ci pass", [], Intent.Pipeline), _ct);
+        var unconfigured = new UnconfiguredProvider(Intent.Pipeline, "AzDO not configured");
+        var insight = await unconfigured.QueryAsync(new Query("did ci pass", [], Intent.Pipeline), _ct);
 
         Assert.NotNull(insight);
         Assert.Equal("AzDO not configured", insight.Answer);

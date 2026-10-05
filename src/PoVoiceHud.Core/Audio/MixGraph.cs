@@ -78,7 +78,7 @@ public sealed class MixGraph
         ReadFully = true,
     };
 
-    private static ISampleProvider To16kMono(ISampleProvider s)
+    private static WdlResamplingSampleProvider To16kMono(ISampleProvider s)
     {
         if (s.WaveFormat.Channels == 2) s = s.ToMono();
         else if (s.WaveFormat.Channels > 2) s = new MultiplexingSampleProvider([s], 1);

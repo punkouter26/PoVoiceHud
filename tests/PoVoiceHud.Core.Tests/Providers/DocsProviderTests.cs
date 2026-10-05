@@ -6,6 +6,7 @@ using PoVoiceHud.Core.Workspace;
 
 namespace PoVoiceHud.Core.Tests.Providers;
 
+[Trait("Category", "Integration")]
 public class DocsProviderTests
 {
     private const string AdrPath = "docs/adr/0004-auth-lifecycle.md";

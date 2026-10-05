@@ -6,6 +6,7 @@ using PoVoiceHud.Core.Workspace;
 
 namespace PoVoiceHud.Core.Tests.Providers;
 
+[Trait("Category", "Integration")]
 public class EfSnapshotParserTests
 {
     private const string SnapshotPath = "src/Infrastructure/Data/Migrations/AppDbContextModelSnapshot.cs";
