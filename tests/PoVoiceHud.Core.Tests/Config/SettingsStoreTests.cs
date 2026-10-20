@@ -40,12 +40,13 @@ public class SettingsStoreTests : IDisposable
     public void A_file_from_an_older_version_loads_and_keys_that_are_gone_are_ignored()
     {
         Directory.CreateDirectory(_dir);
-        File.WriteAllText(File_, """{ "Mode": "Repo", "RepoPath": "C:\\src\\pmis", "FoundryModel": "Llama-3.3-70B-Instruct", "FoundryEndpoint": "https://acme.services.ai.azure.com", "Effects": "Full" }""");
+        File.WriteAllText(File_, """{ "Mode": "Repo", "RepoPath": "C:\\src\\pmis", "FoundryModel": "Llama-3.3-70B-Instruct", "FoundryEndpoint": "https://acme.services.ai.azure.com", "Effects": "Full", "AudioInput": "Both" }""");
 
         var (loaded, warning) = SettingsStore.Load(File_);
 
         Assert.Null(warning);
         Assert.Equal("https://acme.services.ai.azure.com", loaded.FoundryEndpoint);
+        Assert.True(loaded.ListenToCall);   // the old way of saying "also listen to the call" carries over
     }
 
     [Fact]

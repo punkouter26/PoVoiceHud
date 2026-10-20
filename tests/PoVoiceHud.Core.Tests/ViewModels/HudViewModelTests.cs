@@ -1,3 +1,4 @@
+using System.Globalization;
 using PoVoiceHud.Core.Audio;
 using PoVoiceHud.Core.Config;
 using PoVoiceHud.Core.Providers;
@@ -16,7 +17,7 @@ public class HudViewModelTests
         _vm = new HudViewModel(openUri: u => { _opened.Add(u); return Task.CompletedTask; });
     }
 
-    private static TranscriptLine Line(string text, int second = 1, SourceHint source = SourceHint.Mic) => new(source, TimeSpan.FromSeconds(second), text);
+    private static TranscriptLine Line(string text, int second = 1, SourceHint source = SourceHint.Mic) => new(source, T0.AddSeconds(second), text);
 
     private static Insight Judged(string claim, Verdict verdict, string reason = "Because.") => new(claim, verdict, reason, 0.9);
 
@@ -33,7 +34,7 @@ public class HudViewModelTests
         Assert.Equal("Checking…", live.Note);
         Assert.True(_vm.IsChecking);
 
-        _vm.Push(new Checked(line, Judged("Python was created by Dennis Ritchie", Verdict.Contradicted, "Guido van Rossum created Python.")), T0);
+        _vm.Push(new Checked(line, Judged("Python was created by Dennis Ritchie", Verdict.Contradicted, "Guido van Rossum created Python.")));
         _vm.MarkChecking(line, busy: false);
         Assert.Equal(LineState.Incorrect, live.State);
         Assert.Equal("Incorrect — Guido van Rossum created Python.", live.Note);
@@ -48,7 +49,7 @@ public class HudViewModelTests
 
         var vague = Line("Octopuses dream in colour.", 9);
         _vm.AddTranscript(vague);
-        _vm.Push(new Checked(vague, Judged("Octopuses dream in colour", Verdict.Unverified, "Unknown.")), T0);
+        _vm.Push(new Checked(vague, Judged("Octopuses dream in colour", Verdict.Unverified, "Unknown.")));
         Assert.Equal("Can't tell — Unknown.", _vm.Live[^1].Note);
         Assert.Equal("❌ Python was created by Dennis Ritchie", _vm.Headline);   // "can't tell" does not take over the headline
     }
@@ -56,11 +57,11 @@ public class HudViewModelTests
     [Fact]
     public void Facts_keep_only_correct_and_incorrect_claims_newest_first_with_repeats_counted()
     {
-        void Say(string claim, Verdict verdict, int second)
+        void Say(string claim, Verdict verdict, int minute)
         {
-            var line = Line(claim, second);
+            var line = Line(claim, minute * 60);
             _vm.AddTranscript(line);
-            _vm.Push(new Checked(line, Judged(claim, verdict)), T0.AddSeconds(second));
+            _vm.Push(new Checked(line, Judged(claim, verdict)));
         }
 
         Say("The Eiffel Tower was completed in 1889", Verdict.Supported, 1);
@@ -72,7 +73,8 @@ public class HudViewModelTests
         Assert.Equal("1 correct · 1 incorrect", _vm.FactsSummary);
         Assert.Equal(LineState.CantTell, _vm.Live[1].State);   // "can't tell" shows on the Live page only
         Assert.Equal((2, 1, 1), (_vm.Supported, _vm.Contradicted, _vm.Unverified));
-        Assert.Equal("15:04", _vm.Facts[0].Time);
+        Assert.Equal("2 correct · 1 incorrect · 1 can't tell", _vm.TallySummary);
+        Assert.Equal(T0.AddMinutes(4).ToString("t", CultureInfo.CurrentCulture), _vm.Facts[0].Time);   // a repeat shows when it was said again
     }
 
     [Fact]
@@ -81,7 +83,7 @@ public class HudViewModelTests
         var wiki = new Uri("https://en.wikipedia.org/wiki/Eiffel_Tower");
         var line = Line("The Eiffel Tower was completed in 1889.");
         _vm.AddTranscript(line);
-        _vm.Push(new Checked(line, new Insight("The Eiffel Tower was completed in 1889", Verdict.Supported, "Completed in March 1889.", 0.9, wiki, LinkChecked: true)), T0);
+        _vm.Push(new Checked(line, new Insight("The Eiffel Tower was completed in 1889", Verdict.Supported, "Completed in March 1889.", 0.9, wiki, LinkChecked: true)));
 
         var fact = Assert.Single(_vm.Facts);
         Assert.Equal("en.wikipedia.org ↗ (looked up)", fact.LinkLabel);
@@ -92,11 +94,24 @@ public class HudViewModelTests
     }
 
     [Fact]
-    public void The_live_page_shows_first_and_keeps_the_last_lines()
+    public void The_live_page_shows_first_settings_replace_the_pages_and_setup_keeps_them_shown()
     {
-        Assert.True(_vm.IsLiveOpen);
+        Assert.True(_vm.ShowsLive);
         _vm.IsFactsOpen = true;
-        Assert.False(_vm.IsLiveOpen);
+        Assert.False(_vm.ShowsLive);
+        Assert.True(_vm.ShowsFacts);
+
+        _vm.ToggleSettingsCommand.Execute(null);
+        Assert.True(_vm.ShowsSettings);
+        Assert.False(_vm.ShowsPages || _vm.ShowsFacts);
+        _vm.ToggleSettingsCommand.Execute(null);
+        Assert.True(_vm.ShowsFacts);
+
+        _vm.NeedsSetup = true;
+        _vm.ToggleSettingsCommand.Execute(null);   // ⚙ cannot leave the settings until setup is done
+        Assert.True(_vm.ShowsSettings);
+        Assert.False(_vm.IsSettingsOpen);
+        _vm.NeedsSetup = false;
 
         for (var i = 1; i <= HudViewModel.LiveSize + 5; i++) _vm.AddTranscript(Line($"line {i}", i));
         Assert.Equal(HudViewModel.LiveSize, _vm.Live.Count);
@@ -113,7 +128,7 @@ public class HudViewModelTests
         var theirs = Line("second line here", 62, SourceHint.Teams);
         _vm.AddTranscript(theirs);
         Assert.Equal("Them:", _vm.Live[1].Speaker);
-        Assert.Equal("01:02", _vm.Live[1].Stamp);
+        Assert.Equal(T0.AddSeconds(62).ToString("t", CultureInfo.CurrentCulture), _vm.Live[1].Stamp);   // the clock time, as on Facts
 
         _vm.MarkChecking(theirs, busy: true);
         _vm.ResetChecking();

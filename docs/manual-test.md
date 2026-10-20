@@ -4,16 +4,21 @@ What the unit and integration tests cannot reach: a live microphone, a real Foun
 
 ## First run
 
-- [ ] With no `settings.json`, the window opens on the Live page, which says *Listening…*. A claim gets *Can't tell — add the endpoint and key in Settings*.
-- [ ] ⚙ → endpoint `https://<resource>.services.ai.azure.com` and the key → **Check** says `✓ Connected — gpt-4.1-mini answered.` with a green dot. A wrong key says `The key was refused (HTTP 401)` with a red dot.
-- [ ] Close the settings → the header goes through *Loading models…* back to *Listening*. Close them again without changing anything → nothing reloads.
-- [ ] An endpoint that is not https → the header says *Settings not applied — …*.
+- [ ] With no `settings.json` or no stored key, the window opens on Settings with *Connect the fact checker*, Cancel greyed out, the header saying *Connect the fact checker to start*, and Windows' microphone indicator off.
+- [ ] Type the endpoint, switch to the Azure portal to copy the key, come back: Settings are still open with the endpoint as typed.
+- [ ] A wrong key → **Apply** says `✗ The key was refused (HTTP 401).` with a red dot and stays on Settings. The right key → the Live page, and the header goes through *Loading models…* to *Listening*.
+- [ ] An endpoint that is not https → **Apply** says it must be an https:// URL.
+- [ ] ⚙ → turn Wikipedia off → **Apply**: the header says *Settings applied* and the microphone meter keeps moving (no reload). ⚙ → change a switch → **Cancel** (or Esc): the switch is back as it was.
+- [ ] Delete the key in Credential Manager (or revoke it) and restart: the app opens on Settings with the reason.
 
 ## Live and Facts
 
 - [ ] "The Eiffel Tower was completed in 1889." → the line reads *Checking…*, then turns green with *Correct — …* within about 2 s, a rising two-note cue plays, and Facts has it with `en.wikipedia.org ↗ (looked up)`.
 - [ ] "Python was created by Dennis Ritchie." → red, *Incorrect — …*, a low buzz, on Facts.
 - [ ] "Octopuses dream in colour." → a quiet *Can't tell* note with no highlight, on the Live page only; the headline keeps the last real verdict.
+- [ ] "The Empire State Building is in New York. It was completed in 1889." → *Incorrect*, and Facts reads "The Empire State Building was completed in 1889".
+- [ ] "The current president of the United States is Joe Biden." → *Incorrect* (or *Can't tell* with Wikipedia off), not *Correct*.
+- [ ] Pull the network cable mid-session and say a claim → the header says *Fact checks paused: …* once; the line goes plain. Reconnect and say another → *Fact checks are working again*.
 - [ ] A run-on stretch ("Close your border. It'll be the end.") → one line per sentence. An opinion ("They don't love the art.") → a plain, dimmed line.
 - [ ] "Can you hear me?" and "Let's move on." → plain lines, no highlight, no sound.
 - [ ] Say the Eiffel Tower sentence again → Facts shows it once, marked ×2, at the top.
@@ -23,10 +28,11 @@ What the unit and integration tests cannot reach: a live microphone, a real Foun
 
 ## Window, audio and tray
 
-- [ ] Mute with the microphone and with Win+Shift+M: a falling chirp, the header says *Muted*, and nothing more is transcribed. A line that was *Checking…* goes plain.
+- [ ] Mute with the microphone and with the tray's *Mute*: a falling chirp, the header says *Muted*, the level bars go dark, and nothing more is transcribed. A line that was *Checking…* goes plain. In Teams, Ctrl+Shift+M still mutes the call.
+- [ ] Unmute and speak: the Live page's clock times carry on from the real time (they do not restart at 00:00).
 - [ ] *Also listen to the call* on, then play a video with speech → its lines are labelled *Them*.
-- [ ] Snap the window to a screen edge with Win+Arrow, and resize it down to its minimum (420 × 320) → nothing is cut off; long pages scroll.
+- [ ] Drag the window by the headline, snap it with Win+Arrow, and resize it down to its minimum (420 × 320) → nothing is cut off; long pages scroll, and Settings keeps Apply and Cancel in view. The caption buttons do not cover ⚙ at 100 %, 150 % and 200 % scale.
 - [ ] *Sounds and animations* off → no cues, and highlights appear without fading in.
-- [ ] Tray: left click hides and shows the HUD. *Open the history folder* opens `sessions`. *Copy diagnostics* puts a zip on the clipboard (logs, `settings.json`, `environment.txt`, no `sessions`). *Quit* closes the app and removes the icon. *Quit PoVoiceHud* in Settings does the same.
+- [ ] Tray: left click hides and shows the HUD. *Open the history folder* opens `sessions`. *Copy diagnostics* puts a zip on the clipboard (logs, `settings.json`, `environment.txt`, no `sessions`). *Mute*/*Unmute* follows the header. *Quit* closes the app and removes the icon. *Quit PoVoiceHud* in Settings does the same.
 - [ ] *Start with Windows* adds or removes `PoVoiceHud` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 - [ ] *Not yet run on this machine:* `pwsh build/pack.ps1`, install `artifacts\releases\PoVoiceHud.App-win-Setup.exe`, raise `<Version>`, pack again with `-Feed <folder>`, set `UpdateFeed` to that folder and start the installed copy. The header should say the new version downloaded, and closing it should install that version.

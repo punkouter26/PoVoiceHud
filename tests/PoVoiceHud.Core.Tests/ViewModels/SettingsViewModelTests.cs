@@ -7,39 +7,46 @@ namespace PoVoiceHud.Core.Tests.ViewModels;
 
 public class SettingsViewModelTests
 {
+    private const string Endpoint = "https://acme.services.ai.azure.com";
     private readonly Dictionary<string, string> _secrets = [];
     private readonly List<(Uri Endpoint, string? Key)> _connections = [];
     private Func<string> _modelReply = () => "OK";
     private Settings? _saved;
     private string? _keyWhenSaved;
+    private int _done;
 
     private sealed class StubModel(Func<string> reply) : ILanguageModel
     {
         public Task<string> CompleteAsync(string system, string user, CancellationToken ct) => Task.FromResult(reply());
     }
 
-    private SettingsViewModel Build(Settings? settings = null) => new(
-        settings ?? new Settings(),
-        readSecret: name => _secrets.GetValueOrDefault(name),
-        writeSecret: (name, value) => _secrets[name] = value,
-        save: s =>
-        {
-            _saved = s;
-            _keyWhenSaved = _secrets.GetValueOrDefault(CredentialStore.FoundryKey);
-        },
-        connect: (endpoint, key) =>
-        {
-            _connections.Add((endpoint, key));
-            return new StubModel(_modelReply);
-        });
+    private SettingsViewModel Build(Settings? settings = null)
+    {
+        var vm = new SettingsViewModel(
+            settings ?? new Settings(),
+            readSecret: name => _secrets.GetValueOrDefault(name),
+            writeSecret: (name, value) => _secrets[name] = value,
+            save: s =>
+            {
+                _saved = s;
+                _keyWhenSaved = _secrets.GetValueOrDefault(CredentialStore.FoundryKey);
+            },
+            connect: (endpoint, key) =>
+            {
+                _connections.Add((endpoint, key));
+                return new StubModel(_modelReply);
+            });
+        vm.Done += () => _done++;
+        return vm;
+    }
 
     [Fact]
     public void Loads_the_settings_and_whether_a_key_is_stored()
     {
         _secrets[CredentialStore.FoundryKey] = "k";
-        var vm = Build(new Settings { FoundryEndpoint = "https://acme.services.ai.azure.com", ListenToCall = true, Sounds = false });
+        var vm = Build(new Settings { FoundryEndpoint = Endpoint, ListenToCall = true, Sounds = false });
 
-        Assert.Equal("https://acme.services.ai.azure.com", vm.Endpoint);
+        Assert.Equal(Endpoint, vm.Endpoint);
         Assert.True(vm.HasKey);
         Assert.Equal("", vm.Key);
         Assert.True(vm.ListenToCall);
@@ -52,68 +59,83 @@ public class SettingsViewModelTests
     }
 
     [Fact]
-    public void Closing_the_settings_saves_only_changes_and_writes_a_typed_key_before_the_settings()
+    public async Task Apply_checks_a_new_endpoint_and_key_then_writes_the_key_before_the_settings()
     {
         var vm = Build();
-        Assert.False(vm.SaveCommand.CanExecute(null));   // nothing edited yet
+        Assert.False(vm.ApplyCommand.CanExecute(null));   // nothing edited yet
 
-        vm.Endpoint = "https://acme.services.ai.azure.com";
+        vm.Endpoint = Endpoint;
         vm.Key = "new-key";
         vm.ListenToCall = true;
-        vm.Apply();
+        await vm.ApplyCommand.ExecuteAsync(null);
 
+        Assert.Equal((new Uri(Endpoint), "new-key"), Assert.Single(_connections));   // the typed key is what gets checked
         Assert.NotNull(_saved);
-        Assert.Equal("new-key", _keyWhenSaved);   // applying the settings rebuilds the pipeline, which reads the key
-        Assert.Equal("https://acme.services.ai.azure.com", _saved.FoundryEndpoint);
+        Assert.Equal("new-key", _keyWhenSaved);   // applying the settings builds a checker, which reads the key
+        Assert.Equal(Endpoint, _saved.FoundryEndpoint);
         Assert.Equal(AudioInput.Both, _saved.AudioInput);
         Assert.True(vm.HasKey);
         Assert.Equal("", vm.Key);
-        Assert.False(vm.SaveCommand.CanExecute(null));   // the saved state is the new baseline
+        Assert.Equal("✓ Connected — gpt-4.1-mini answered.", vm.Message);
+        Assert.Equal(1, _done);
+        Assert.False(vm.ApplyCommand.CanExecute(null));   // the applied state is the new baseline
 
-        _saved = null;
-        vm.Apply();                                      // closing them again with nothing changed does nothing
-        Assert.Null(_saved);
-        vm.Sounds = false;
-        vm.Apply();
-        Assert.False(_saved?.Sounds);
+        vm.Sounds = false;                                // a switch alone needs no new connection check
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.False(_saved.Sounds);
+        Assert.Single(_connections);
     }
 
     [Fact]
-    public void An_endpoint_that_is_not_https_is_refused_and_reported()
-    {
-        var vm = Build();
-        vm.Endpoint = "http://acme.services.ai.azure.com";
-
-        vm.Apply();
-
-        Assert.Null(_saved);
-        Assert.Contains("https://", vm.EndpointError);
-        Assert.Equal(vm.EndpointError, vm.Problem);   // what the pill reports, since the settings are closed by then
-    }
-
-    [Fact]
-    public async Task Check_calls_the_model_with_what_is_typed_and_says_what_went_wrong()
+    public async Task A_wrong_endpoint_or_key_is_reported_and_nothing_is_applied()
     {
         _secrets[CredentialStore.FoundryKey] = "stored-key";
         var vm = Build();
 
-        await vm.CheckCommand.ExecuteAsync(null);
-        Assert.StartsWith("✗ Enter the endpoint", vm.CheckResult);
+        vm.Endpoint = "http://acme.services.ai.azure.com";
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Contains("https://", vm.Message);
         Assert.Empty(_connections);
 
-        vm.Endpoint = "https://acme.services.ai.azure.com";
-        await vm.CheckCommand.ExecuteAsync(null);
-        Assert.Equal("✓ Connected — gpt-4.1-mini answered.", vm.CheckResult);
-        Assert.Equal((new Uri("https://acme.services.ai.azure.com"), "stored-key"), Assert.Single(_connections));
-
-        vm.Key = "typed-key";
+        vm.Endpoint = Endpoint;
         _modelReply = () => throw new HttpRequestException("401", null, HttpStatusCode.Unauthorized);
-        await vm.CheckCommand.ExecuteAsync(null);
-        Assert.Equal("✗ The key was refused (HTTP 401).", vm.CheckResult);
-        Assert.Equal("typed-key", _connections[^1].Key);   // the typed key is what gets checked, not the stored one
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal("✗ The key was refused (HTTP 401).", vm.Message);
+        Assert.Equal("stored-key", _connections[^1].Key);   // nothing typed: the stored key is checked
 
         _modelReply = () => throw new HttpRequestException("404", null, HttpStatusCode.NotFound);
-        await vm.CheckCommand.ExecuteAsync(null);
-        Assert.Contains("No gpt-4.1-mini deployment", vm.CheckResult);
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Contains("No gpt-4.1-mini deployment", vm.Message);
+
+        Assert.Null(_saved);
+        Assert.Equal(0, _done);   // the settings stay open to fix it
+    }
+
+    [Fact]
+    public async Task Cancel_puts_back_what_was_applied_and_setup_cannot_be_cancelled_until_it_works()
+    {
+        var vm = Build(new Settings { FoundryEndpoint = Endpoint });
+        vm.Endpoint = "https://other.services.ai.azure.com";
+        vm.Key = "typed";
+        vm.Sounds = false;
+
+        vm.CancelCommand.Execute(null);
+        Assert.Equal(Endpoint, vm.Endpoint);
+        Assert.Equal("", vm.Key);
+        Assert.True(vm.Sounds);
+        Assert.Equal(1, _done);
+        Assert.Null(_saved);
+
+        _secrets[CredentialStore.FoundryKey] = "stored-key";
+        vm.RequireSetup("The key was refused (HTTP 401).");
+        Assert.Equal("✗ The key was refused (HTTP 401).", vm.Message);
+        Assert.False(vm.CancelCommand.CanExecute(null));
+        Assert.True(vm.ApplyCommand.CanExecute(null));   // nothing edited, but setup always checks again
+
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Single(_connections);
+        Assert.NotNull(_saved);
+        Assert.False(vm.RequiresSetup);
+        Assert.True(vm.CancelCommand.CanExecute(null));
     }
 }

@@ -43,9 +43,10 @@ public partial class App : Application
     private HudPipeline? _pipeline;
     private Settings _settings = new();
     private int _run;   // bumped by every (re)start, so a start that was overtaken throws its pipeline away
-    private GlobalHotkey? _muteKey;
+    private SettingsViewModel? _settingsPage;
     private TrayIcon? _tray;
     private DispatcherTimer? _meter;
+    private bool _demo;   // a layout check: no audio, and the real window placement is left alone
 
     public App()
     {
@@ -87,12 +88,13 @@ public partial class App : Application
         _window = new MainWindow(viewModel);
         _window.Closed += OnClosed;
         _window.Activate();
-        BindHotkey();
         AttachSettings(settings);
         ApplyFeedback(settings);
 
         viewModel.PropertyChanged += (_, e) =>
         {
+            // Leaving the settings without Apply (Cancel, ⚙ or Esc) discards what was typed.
+            if (e.PropertyName == nameof(HudViewModel.IsSettingsOpen) && !viewModel.IsSettingsOpen) _settingsPage?.Revert();
             if (e.PropertyName != nameof(HudViewModel.IsMuted)) return;
             if (_pipeline is { } pipeline) pipeline.IsMuted = viewModel.IsMuted;
             if (_tray is { } tray) tray.Tooltip = viewModel.IsMuted ? "PoVoiceHud — muted" : "PoVoiceHud — listening";
@@ -114,14 +116,16 @@ public partial class App : Application
 
 #if DEBUG
         // Layout checks without a microphone: --demo seeds a sample conversation (--facts opens the Facts page,
-        // --settings shows the settings in the panel instead).
+        // --settings the Settings page, --setup the first-run page).
         var flags = Environment.GetCommandLineArgs();
         if (flags.Contains("--demo"))
         {
+            _demo = true;
             _settings = _settings with { Sounds = false };   // the demo is for looking at, not listening to
             _window.SeedDemo();
             if (flags.Contains("--facts")) viewModel.IsFactsOpen = true;
-            if (flags.Contains("--settings")) _window.ShowSettings();
+            if (flags.Contains("--settings")) viewModel.IsSettingsOpen = true;
+            if (flags.Contains("--setup")) RequireSetup(null);
             return;
         }
 #endif
@@ -130,9 +134,19 @@ public partial class App : Application
         _tray.Selected += (_, _) => ToggleVisible();
         _tray.ContextMenu += (_, e) => e.Flyout = TrayMenu();
         if (settings.StartWithWindows) Autostart.Set(true);   // keeps the entry pointing at this exe if it moved
-        if (warning is not null) viewModel.SetStatus(warning);
-        _ = StartAsync(settings);
         _ = CheckUpdatesAsync(userAsked: false);
+        // Nothing is heard until there is an endpoint and key to check claims with.
+        if (!FoundryClient.IsReady(settings.FoundryEndpoint, CredentialStore.Read(CredentialStore.FoundryKey) is not null)) RequireSetup(null);
+        else _ = StartAsync(settings);
+        if (warning is not null) viewModel.SetStatus(warning);
+    }
+
+    /// <summary>Shows only the Settings page, saying why, until Apply finds a working endpoint and key. The microphone stays off.</summary>
+    private void RequireSetup(string? why)
+    {
+        _window!.ViewModel.NeedsSetup = true;
+        _window.ViewModel.SetStatus("Connect the fact checker to start");
+        _settingsPage!.RequireSetup(why);
     }
 
     /// <summary>"Sounds and animations": the cues check the setting as they play; the highlight's fade also follows Windows' animation switch.</summary>
@@ -146,6 +160,13 @@ public partial class App : Application
         void Status(string text) => window.DispatcherQueue.TryEnqueue(() => viewModel.SetStatus(text));
         try
         {
+            // One call to the model while the models load: a key refused or a deployment gone since last time sends the user to Settings.
+            // A service that is only unreachable does not: transcription still works, and the header says why checks are paused.
+            var key = CredentialStore.Read(CredentialStore.FoundryKey);
+            var connection = FoundryClient.IsReady(settings.FoundryEndpoint, key is not null)
+                ? Connection.TestAsync(new FoundryClient(Http, new Uri(settings.FoundryEndpoint!), key), CancellationToken.None)
+                : Task.FromResult<FactCheckUnavailableException?>(new(Connection.NotSetUp) { NeedsSetup = true });
+
             Status("Checking models…");
             var models = await ModelStore.EnsureAsync(new Progress<double>(p => Status($"Downloading models… {p:P0}")), CancellationToken.None);
 
@@ -158,9 +179,15 @@ public partial class App : Application
 
             // Resolving the pipeline loads Whisper: keep it off the UI thread.
             var pipeline = await Task.Run(container.GetRequiredService<HudPipeline>);
-            if (run != _run)
+            var problem = await connection;
+            if (run != _run || problem is { NeedsSetup: true })
             {
-                await Task.Run(container.Dispose);   // settings were saved again while this one was loading
+                await Task.Run(container.Dispose);   // settings were saved again while this one was loading, or they no longer work
+                if (run == _run)
+                {
+                    _log.LogWarning("Not starting: {Problem}", problem!.Message);
+                    window.DispatcherQueue.TryEnqueue(() => RequireSetup(problem.Message));
+                }
                 return;
             }
             (_container, _pipeline) = (container, pipeline);
@@ -175,7 +202,7 @@ public partial class App : Application
             _ = Drain(pipeline.Checking, c => viewModel.MarkChecking(c.Line, c.Busy));
             _ = Drain(pipeline.Verdicts, result =>
             {
-                viewModel.Push(result, DateTimeOffset.Now);
+                viewModel.Push(result);
                 Sessions.Append(new SessionEntry
                 {
                     At = DateTimeOffset.Now, Source = result.Line.Source.ToString(), Claim = result.Verdict.Claim, Answer = result.Verdict.Answer,
@@ -193,12 +220,41 @@ public partial class App : Application
         }
     }
 
-    /// <summary>Saving settings lands here: persist, then swap the running pipeline for one built from them.</summary>
+    /// <summary>
+    /// Apply in Settings lands here, after the connection check passed: the first start once setup is done; otherwise the
+    /// running pipeline gets a new fact checker, or is rebuilt when what it hears changes.
+    /// </summary>
     private async Task ApplyAsync(Settings settings)
     {
+        var old = _settings;
         _settings = settings;
         var viewModel = _window!.ViewModel;
         viewModel.Apply(settings);
+        if (viewModel.NeedsSetup)
+        {
+            viewModel.NeedsSetup = false;
+            _log.LogInformation("Set up; starting");
+            await StartAsync(settings);
+            return;
+        }
+        // The endpoint, key and Wikipedia switch are the checker's alone, and sounds and start-up the app's: Whisper and the audio keep running.
+        if (_pipeline is { } pipeline && settings with
+            {
+                FoundryEndpoint = old.FoundryEndpoint, LookUpClaims = old.LookUpClaims, Sounds = old.Sounds, StartWithWindows = old.StartWithWindows,
+            } == old)
+        {
+            pipeline.Checker = ServiceCollectionExtensions.CreateChecker(settings, Http);
+            _log.LogInformation("Settings applied; new fact checker");
+            viewModel.SetStatus("Settings applied");
+            return;
+        }
+        await RestartAsync(settings);
+    }
+
+    /// <summary>Disposes the whole container (capture, Whisper) and builds a new one from <paramref name="settings"/>.</summary>
+    private async Task RestartAsync(Settings settings)
+    {
+        var viewModel = _window!.ViewModel;
         viewModel.ResetChecking();
         viewModel.MicLevel = 0;
 
@@ -226,7 +282,9 @@ public partial class App : Application
             return item;
         }
         var menu = new MenuFlyout();
-        menu.Items.Add(Item(_window!.AppWindow.IsVisible ? "Hide the HUD" : "Show the HUD", ToggleVisible));
+        var viewModel = _window!.ViewModel;
+        menu.Items.Add(Item(_window.AppWindow.IsVisible ? "Hide the HUD" : "Show the HUD", ToggleVisible));
+        if (viewModel.ShowsPages) menu.Items.Add(Item(viewModel.IsMuted ? "Unmute" : "Mute", () => viewModel.ToggleMuteCommand.Execute(null)));
         menu.Items.Add(Item("Open the history folder", () => OpenFolder(Sessions.Directory)));
         menu.Items.Add(Item("Copy diagnostics", () => _ = CollectDiagnosticsAsync()));
         menu.Items.Add(Item("Check for updates", () => _ = CheckUpdatesAsync(userAsked: true)));
@@ -288,29 +346,24 @@ public partial class App : Application
         }
     }
 
-    private void BindHotkey()
+    private void AttachSettings(Settings settings)
     {
-        var window = _window!;
-        var viewModel = window.ViewModel;
-        _muteKey = new GlobalHotkey(window, 1, Settings.MuteHotkeys,
-            () => window.DispatcherQueue.TryEnqueue(() => viewModel.ToggleMuteCommand.Execute(null)));
-        viewModel.MuteHint = _muteKey.Binding is { } mute ? $"Click or press {mute} to mute" : "Click to mute (the mute hotkeys are taken by other programs)";
+        var page = new SettingsViewModel(settings,
+            readSecret: CredentialStore.Read,
+            writeSecret: CredentialStore.Write,
+            save: s =>
+            {
+                SettingsStore.Save(s, SettingsStore.DefaultPath);
+                if (s.StartWithWindows != _settings.StartWithWindows && !Autostart.Set(s.StartWithWindows))
+                    _window!.ViewModel.SetStatus("Windows did not allow changing the startup list.");
+                ApplyFeedback(s);
+                _ = ApplyAsync(s);
+            },
+            connect: (endpoint, key) => new FoundryClient(Http, endpoint, key));
+        page.Done += () => _window!.ViewModel.IsSettingsOpen = false;
+        _settingsPage = page;
+        _window!.AttachSettings(page, quit: () => _window!.Close());
     }
-
-    private void AttachSettings(Settings settings) => _window!.AttachSettings(new SettingsViewModel(settings,
-        readSecret: CredentialStore.Read,
-        writeSecret: CredentialStore.Write,
-        save: s =>
-        {
-            SettingsStore.Save(s, SettingsStore.DefaultPath);
-            if (s.StartWithWindows != _settings.StartWithWindows && !Autostart.Set(s.StartWithWindows))
-                _window!.ViewModel.SetStatus("Windows did not allow changing the startup list.");
-            ApplyFeedback(s);
-            // Sounds and start-up are the app's business: changing only those needs no new pipeline.
-            if (s with { Sounds = _settings.Sounds, StartWithWindows = _settings.StartWithWindows } == _settings) _settings = s;
-            else _ = ApplyAsync(s);
-        },
-        connect: (endpoint, key) => new FoundryClient(Http, endpoint, key)), quit: () => _window!.Close());
 
     private async Task Drain<T>(ChannelReader<T> reader, Action<T> apply)
     {
@@ -327,10 +380,9 @@ public partial class App : Application
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
-        File.WriteAllText(WindowFile, JsonSerializer.Serialize(_placement.ToDictionary(p => p.Key, p => p.Value.ToString())));
+        if (!_demo) File.WriteAllText(WindowFile, JsonSerializer.Serialize(_placement.ToDictionary(p => p.Key, p => p.Value.ToString())));
         _log.LogInformation("Closing");
         _meter?.Stop();
-        _muteKey?.Dispose();
         _tray?.Dispose();
         _container?.Dispose();
     }

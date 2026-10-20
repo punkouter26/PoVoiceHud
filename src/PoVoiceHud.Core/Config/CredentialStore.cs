@@ -7,7 +7,6 @@ namespace PoVoiceHud.Core.Config;
 /// <summary>Generic credentials in Windows Credential Manager. Targets are "PoVoiceHud/&lt;name&gt;".</summary>
 public static partial class CredentialStore
 {
-    public const string AzdoPat = "PoVoiceHud/AzDoPat";
     public const string FoundryKey = "PoVoiceHud/FoundryKey";
 
     private const int CredTypeGeneric = 1;

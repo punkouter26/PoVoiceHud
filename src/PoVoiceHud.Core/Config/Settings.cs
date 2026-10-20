@@ -10,9 +10,6 @@ public enum AudioInput { Mic, Remote, Both }
 /// </summary>
 public sealed record Settings
 {
-    /// <summary>Mute hotkeys in order of preference; the first one no other program owns gets registered.</summary>
-    public static readonly IReadOnlyList<string> MuteHotkeys = ["Win+Shift+M", "Ctrl+Shift+M", "Ctrl+Alt+M", "Ctrl+Shift+F12"];
-
     /// <summary>The Azure AI Foundry resource root, https://&lt;resource&gt;.services.ai.azure.com. The key is in Credential Manager.</summary>
     public string? FoundryEndpoint { get; init; }
     /// <summary>Looks each claim up on Wikipedia before the model judges it, so the verdict can cite a real article.</summary>

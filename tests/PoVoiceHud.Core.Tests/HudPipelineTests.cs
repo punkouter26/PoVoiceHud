@@ -40,11 +40,15 @@ public class HudPipelineTests
     /// <summary>Scripted fact checker that counts what it is asked.</summary>
     private sealed class FakeChecker(Func<string, Insight?> answer) : IFactChecker
     {
-        public int Calls { get; private set; }
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+        public System.Collections.Concurrent.ConcurrentQueue<(string Sentence, IReadOnlyList<string> Context)> Asked { get; } = new();
 
         public Task<Insight?> CheckAsync(string sentence, IReadOnlyList<string> context, CancellationToken ct)
         {
-            Calls++;
+            Interlocked.Increment(ref _calls);
+            Asked.Enqueue((sentence, context));
             return Task.FromResult(answer(sentence));
         }
     }
@@ -100,6 +104,29 @@ public class HudPipelineTests
     }
 
     [Fact]
+    public async Task A_checker_that_cannot_be_reached_is_reported_once_and_context_includes_lines_that_were_not_checked()
+    {
+        using var vad = await VadAsync();
+        var transcriber = new GatedTranscriber("Okay. The Eiffel Tower was completed in 1889. Python was created by Dennis Ritchie.");
+        transcriber.Release.SetResult();
+        var checker = new FakeChecker(_ => throw new FactCheckUnavailableException("The fact-check service answered HTTP 503."));
+        using var pipeline = new HudPipeline(Replay(), vad, transcriber, checker, NullLogger<HudPipeline>.Instance);
+
+        pipeline.Start();
+        var deadline = DateTime.UtcNow + Timeout;
+        while (checker.Calls < 2 && DateTime.UtcNow < deadline) await Task.Delay(20, _ct);
+        await Task.Delay(200, _ct);
+        Assert.Equal(2, checker.Calls);
+
+        var statuses = new List<string>();
+        while (pipeline.Status.TryRead(out var status)) statuses.Add(status);
+        Assert.Single(statuses, s => s == "Fact checks paused: The fact-check service answered HTTP 503.");   // once, not per line
+        Assert.False(pipeline.Verdicts.TryRead(out _));                                                         // and no "can't tell" on the lines
+        var context = checker.Asked.First(a => a.Sentence.StartsWith("The Eiffel", StringComparison.Ordinal)).Context;
+        Assert.Equal(["Okay."], context);   // "Okay." was never checked, but it is still what came before
+    }
+
+    [Fact]
     public async Task Mute_discards_queued_audio_and_the_transcription_in_flight()
     {
         using var vad = await VadAsync();
@@ -152,7 +179,7 @@ public class HudPipelineTests
     }
 
     [Fact]
-    public async Task Container_without_an_endpoint_wires_a_checker_that_says_what_to_set_up()
+    public async Task Container_without_an_endpoint_wires_a_checker_that_says_setup_is_needed()
     {
         await SileroVadTests.EnsureModelAsync();
         var services = new ServiceCollection();
@@ -162,7 +189,7 @@ public class HudPipelineTests
         await using var container = services.BuildServiceProvider();
 
         Assert.NotNull(container.GetRequiredService<HudPipeline>());
-        var verdict = await container.GetRequiredService<IFactChecker>().CheckAsync(Claim, [], _ct);
-        Assert.StartsWith("⚠️ Can't tell — add the endpoint and key in Settings", verdict?.Answer);
+        var problem = await Assert.ThrowsAsync<FactCheckUnavailableException>(() => container.GetRequiredService<IFactChecker>().CheckAsync(Claim, [], _ct));
+        Assert.True(problem.NeedsSetup);
     }
 }

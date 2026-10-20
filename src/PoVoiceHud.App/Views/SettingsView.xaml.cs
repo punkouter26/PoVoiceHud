@@ -5,9 +5,9 @@ using PoVoiceHud.Core.ViewModels;
 
 namespace PoVoiceHud.App.Views;
 
-public sealed partial class SettingsFlyout : UserControl
+public sealed partial class SettingsView : UserControl
 {
-    public SettingsFlyout(SettingsViewModel viewModel)
+    public SettingsView(SettingsViewModel viewModel)
     {
         ViewModel = viewModel;
         InitializeComponent();
@@ -18,15 +18,12 @@ public sealed partial class SettingsFlyout : UserControl
     /// <summary>Closes the app; set by the window.</summary>
     public Action? Quit { get; set; }
 
-    /// <summary>Scroll rather than run off the screen: <paramref name="height"/> is what the screen has room for.</summary>
-    public void FitTo(double height) => Scroller.MaxHeight = Math.Max(240, height);
-
     public static string KeyPlaceholder(bool hasKey) => hasKey ? "•••••••• (stored — type to replace)" : "not set";
 
-    /// <summary>An error line takes no room until there is an error.</summary>
+    /// <summary>A line that takes no room until there is something to say.</summary>
     public static Visibility Shown(string? text) => string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
 
-    /// <summary>The connection's dot: green once the check passed, red when it failed, grey before any check.</summary>
+    /// <summary>The connection's dot: green once the check passed, red when it failed, grey while checking.</summary>
     public static Brush Dot(string? result) => Theme(result switch
     {
         ['✓', ..] => "SystemFillColorSuccessBrush",

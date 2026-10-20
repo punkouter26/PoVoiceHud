@@ -1,13 +1,11 @@
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using PoVoiceHud.Core;
 using PoVoiceHud.Core.Audio;
 using PoVoiceHud.Core.ViewModels;
 using Windows.ApplicationModel.DataTransfer;
-using Windows.Graphics;
 using WinUIEx;
 
 namespace PoVoiceHud.App;
@@ -23,6 +21,11 @@ public sealed partial class MainWindow : WindowEx
         ViewModel = viewModel;
         InitializeComponent();
         AppWindow.SetIcon(IconPath);
+        // The header is the title bar: one 48 px row, dragged by the headline, with the caption buttons drawn over its right end.
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(DragArea);
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
+        Root.SizeChanged += (_, _) => KeepClearOfCaptionButtons();
         PageSwitch.SelectedItem = ViewModel.IsFactsOpen ? FactsTab : LiveTab;   // from the view model, not the markup, so a page chosen before load sticks
         ViewModel.PropertyChanged += (_, e) =>
         {
@@ -48,7 +51,12 @@ public sealed partial class MainWindow : WindowEx
     /// <summary>The app icon, copied next to the exe: the window, the tray and the installer all use it.</summary>
     public static string IconPath { get; } = Path.Combine(AppContext.BaseDirectory, "Assets", "PoVoiceHud.ico");
 
-    private RectInt32 WorkArea => DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+    /// <summary>The caption buttons' width is in physical pixels and changes with the display's scale.</summary>
+    private void KeepClearOfCaptionButtons()
+    {
+        if (Content.XamlRoot is { RasterizationScale: > 0 } root)
+            CaptionSpace.Width = new GridLength(AppWindow.TitleBar.RightInset / root.RasterizationScale);
+    }
 
     private void PageSwitch_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args) =>
         ViewModel.IsFactsOpen = ReferenceEquals(sender.SelectedItem, FactsTab);
@@ -82,30 +90,14 @@ public sealed partial class MainWindow : WindowEx
             LevelBars.Children[i].Opacity = level >= BarThresholds[i] ? 1 : 0.2;
     }
 
-    public void AttachSettings(SettingsViewModel settings, Action quit)
-    {
-        var view = new Views.SettingsFlyout(settings) { Quit = quit };
-        var flyout = new Flyout
-        {
-            Content = view,
-            Placement = FlyoutPlacementMode.BottomEdgeAlignedRight,
-            ShouldConstrainToRootBounds = false,   // the pill is 44 px tall; the flyout must be allowed to spill outside it
-        };
-        flyout.Opening += (_, _) => view.FitTo(WorkArea.Height / (Content.XamlRoot?.RasterizationScale ?? 1) - 120);
-        flyout.Closed += (_, _) =>
-        {
-            // There is no Save button: closing the settings is what applies them.
-            settings.Apply();
-            if (settings.Problem is { } problem) ViewModel.SetStatus($"Settings not applied — {problem}");
-        };
-        SettingsButton.Flyout = flyout;
-    }
+    /// <summary>The Settings page, shown in place of Live and Facts while it is open or while setup is needed.</summary>
+    public void AttachSettings(SettingsViewModel settings, Action quit) => SettingsHost.Content = new Views.SettingsView(settings) { Quit = quit };
 
     public static Visibility Not(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
 
     public static string MicName(bool muted) => muted ? "Microphone is muted — unmute" : "Microphone is live — mute";
 
-    public static string MicTip(string status, string muteHint) => $"{status}\n{muteHint}";
+    public static string MicTip(string status, bool muted) => $"{status}\n{(muted ? "Click to unmute" : "Click to mute")}";
 
     /// <summary>One verdict's share of the bar along the header's bottom edge; with no verdicts yet the bar is empty.</summary>
     public static GridLength Share(int count) => new(count, GridUnitType.Star);
@@ -146,18 +138,6 @@ public sealed partial class MainWindow : WindowEx
     private static Brush Theme(string key) => Application.Current.Resources.TryGetValue(key, out var value) && value is Brush brush ? brush : None;
 
 #if DEBUG
-    /// <summary>
-    /// Puts the settings into the panel itself: run a Debug build with --demo --settings. A flyout only opens for the
-    /// foreground window, so this is the way to look at the settings layout without clicking anything.
-    /// </summary>
-    public void ShowSettings()
-    {
-        if (SettingsButton.Flyout is not Flyout { Content: Views.SettingsFlyout settings } flyout) return;
-        flyout.Content = null;
-        Panel.Children.Clear();
-        Panel.Children.Add(settings);
-    }
-
     /// <summary>A conversation with every kind of line, for layout checks: run a Debug build with --demo (--facts for the Facts page).</summary>
     public void SeedDemo()
     {
@@ -175,14 +155,14 @@ public sealed partial class MainWindow : WindowEx
         ];
         foreach (var (source, at, text, verdict, reason) in said)
         {
-            var line = new TranscriptLine(source, TimeSpan.FromSeconds(at), text);
+            var line = new TranscriptLine(source, now.AddSeconds(at - 270), text);
             ViewModel.AddTranscript(line);
             if (reason.Length == 0) continue;
             ViewModel.MarkChecking(line, busy: true);
             if (verdict is not { } v) continue;
             var link = v == Core.Providers.Verdict.Unverified ? null
                 : new Uri($"https://en.wikipedia.org/wiki/{(v == Core.Providers.Verdict.Supported ? "Eiffel_Tower" : "Python_(programming_language)")}");
-            ViewModel.Push(new Checked(line, new Core.Providers.Insight(text.TrimEnd('.'), v, reason, 0.9, link, LinkChecked: true)), now.AddSeconds(at - 270));
+            ViewModel.Push(new Checked(line, new Core.Providers.Insight(text.TrimEnd('.'), v, reason, 0.9, link, LinkChecked: true)));
             ViewModel.MarkChecking(line, busy: false);
         }
         ViewModel.MicLevel = 0.5;   // an ordinary speaking voice, so the meter is visible in the sample

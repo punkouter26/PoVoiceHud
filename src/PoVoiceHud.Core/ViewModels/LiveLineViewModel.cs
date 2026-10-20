@@ -1,3 +1,4 @@
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using PoVoiceHud.Core.Audio;
 using PoVoiceHud.Core.Providers;
@@ -15,8 +16,8 @@ public sealed partial class LiveLineViewModel(TranscriptLine line, bool showSpea
 
     public TranscriptLine Line => line;
     public string Text => line.Text;
-    /// <summary>Minutes:seconds since listening started.</summary>
-    public string Stamp => $"{line.At:mm\\:ss}";
+    /// <summary>The clock time it was said, in the user's short time format (as on the Facts page).</summary>
+    public string Stamp => line.At.ToString("t", CultureInfo.CurrentCulture);
     /// <summary>"You:" or "Them:" when the call is heard too; nothing when only the microphone is.</summary>
     public string Speaker => showSpeaker ? $"{line.Source.Speaker()}:" : "";
 

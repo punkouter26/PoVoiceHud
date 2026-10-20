@@ -9,29 +9,33 @@ using PoVoiceHud.Core.Vad;
 
 namespace PoVoiceHud.Core;
 
-public sealed record TranscriptLine(SourceHint Source, TimeSpan At, string Text);
+/// <summary>One sentence heard: who said it, the clock time they started saying it, and what was said.</summary>
+public sealed record TranscriptLine(SourceHint Source, DateTimeOffset At, string Text);
 
 /// <summary>The verdict on one transcript line.</summary>
 public sealed record Checked(TranscriptLine Line, Insight Verdict);
 
 /// <summary>
-/// Audio frames → VAD → utterances → Whisper → fact checker, one utterance at a time. Muting bumps a generation
-/// counter so anything already in flight is discarded when it completes.
+/// Audio frames → VAD → utterances → Whisper → fact checker. Utterances are transcribed one at a time; up to
+/// <see cref="ParallelChecks"/> claims are checked at once. Muting bumps a generation counter so anything already in
+/// flight is discarded when it completes.
 /// </summary>
 public sealed partial class HudPipeline : IDisposable
 {
     private const int ContextLines = 2;
+    /// <summary>Checks in flight at once, so a slow answer (up to 8 s) does not hold up the claims said after it.</summary>
+    public const int ParallelChecks = 3;
 
     private readonly IAudioSource _audio;
     private readonly SileroVad _vad;
     private readonly ITranscriber _transcriber;
-    private readonly IFactChecker _checker;
+    private volatile IFactChecker _checker;
     private readonly ILogger<HudPipeline> _log;
     private readonly UtteranceSegmenter _segmenter = new();
     // Not SingleReader: the mute setter drains it from the UI thread while the worker is the normal consumer.
-    private readonly Channel<Utterance> _utterances = Channel.CreateUnbounded<Utterance>();
+    private readonly Channel<(Utterance Utterance, DateTimeOffset At)> _utterances = Channel.CreateUnbounded<(Utterance, DateTimeOffset)>();
     // Two stages so a slow model call never delays the next transcription.
-    private readonly Channel<(TranscriptLine Line, int Generation)> _checks = Channel.CreateUnbounded<(TranscriptLine, int)>();
+    private readonly Channel<(TranscriptLine Line, string[] Context, int Generation)> _checks = Channel.CreateUnbounded<(TranscriptLine, string[], int)>();
     private readonly Channel<TranscriptLine> _transcript = Channel.CreateUnbounded<TranscriptLine>();
     private readonly Channel<Checked> _verdicts = Channel.CreateUnbounded<Checked>();
     private readonly Channel<string> _status = Channel.CreateUnbounded<string>();
@@ -39,11 +43,14 @@ public sealed partial class HudPipeline : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly object _vadGate = new();
     private int _generation;
+    private TimeSpan _frameAt;      // the latest frame's position in the audio, to date an utterance by the clock
+    private string? _problem;       // why checks are failing, shown once in the header until one succeeds again
 
     public HudPipeline(IAudioSource audio, SileroVad vad, ITranscriber transcriber, IFactChecker checker, ILogger<HudPipeline> log)
     {
         (_audio, _vad, _transcriber, _checker, _log) = (audio, vad, transcriber, checker, log);
-        _segmenter.UtteranceReady += u => _utterances.Writer.TryWrite(u);
+        // Raised while a frame is pushed, so the clock time it started is now less the audio since its start.
+        _segmenter.UtteranceReady += u => _utterances.Writer.TryWrite((u, DateTimeOffset.Now - (_frameAt - u.Start)));
         _audio.FrameAvailable += OnFrame;
         _audio.Status += s => _status.Writer.TryWrite(s);
     }
@@ -51,6 +58,17 @@ public sealed partial class HudPipeline : IDisposable
     public ChannelReader<TranscriptLine> Transcript => _transcript.Reader;
     public ChannelReader<Checked> Verdicts => _verdicts.Reader;
     public ChannelReader<string> Status => _status.Reader;
+
+    /// <summary>The fact checker; replaced when only its settings change, so Whisper and the audio keep running.</summary>
+    public IFactChecker Checker
+    {
+        get => _checker;
+        set
+        {
+            _checker = value;
+            Volatile.Write(ref _problem, null);   // the new one gets a fresh chance to report what is wrong
+        }
+    }
 
     /// <summary>A line is queued for the fact checker (Busy) and done with it, with or without a verdict, or dropped by mute.</summary>
     public ChannelReader<(TranscriptLine Line, bool Busy)> Checking => _checking.Reader;
@@ -68,6 +86,7 @@ public sealed partial class HudPipeline : IDisposable
                 {
                     _segmenter.Flush();
                     _vad.Reset();
+                    Level = 0;   // no frames arrive while muted, so the meter would otherwise keep the last level
                 }
                 while (_utterances.Reader.TryRead(out _)) { }
                 while (_checks.Reader.TryRead(out var dropped)) _checking.Writer.TryWrite((dropped.Line, false));
@@ -118,15 +137,17 @@ public sealed partial class HudPipeline : IDisposable
             }
             Level = LevelOf(frame.Samples.Span);
             Speaker = frame.Source;
+            _frameAt = frame.Timestamp;
             _segmenter.Push(frame, _vad.Process(frame.Samples.Span));
         }
     }
 
     private async Task WorkAsync()
     {
+        var recent = new List<string>();   // the sentences just heard, handed to the checker as context for "it" and "they"
         try
         {
-            await foreach (var utterance in _utterances.Reader.ReadAllAsync(_cts.Token))
+            await foreach (var (utterance, at) in _utterances.Reader.ReadAllAsync(_cts.Token))
             {
                 var generation = Volatile.Read(ref _generation);
                 try
@@ -136,11 +157,15 @@ public sealed partial class HudPipeline : IDisposable
                     // Whisper hands over everything said between two pauses; each sentence is its own line with its own verdict.
                     foreach (var sentence in Sentences(text))
                     {
-                        var line = new TranscriptLine(utterance.Source, utterance.Start, sentence);
+                        var line = new TranscriptLine(utterance.Source, at, sentence);
                         _transcript.Writer.TryWrite(line);
-                        if (!FactChecker.IsCandidate(sentence)) continue;
-                        _checking.Writer.TryWrite((line, true));   // shown as "checking…" from the moment it is queued
-                        _checks.Writer.TryWrite((line, generation));
+                        if (FactChecker.IsCandidate(sentence))
+                        {
+                            _checking.Writer.TryWrite((line, true));   // shown as "checking…" from the moment it is queued
+                            _checks.Writer.TryWrite((line, recent.ToArray(), generation));
+                        }
+                        recent.Add(sentence);
+                        if (recent.Count > ContextLines) recent.RemoveAt(0);
                     }
                 }
                 catch (Exception e) when (!_cts.IsCancellationRequested)
@@ -158,17 +183,25 @@ public sealed partial class HudPipeline : IDisposable
 
     private async Task CheckAsync()
     {
-        var recent = new List<string>();   // the sentences just before this one, handed to the checker as context
         try
         {
-            await foreach (var (line, generation) in _checks.Reader.ReadAllAsync(_cts.Token))
+            var options = new ParallelOptions { MaxDegreeOfParallelism = ParallelChecks, CancellationToken = _cts.Token };
+            await Parallel.ForEachAsync(_checks.Reader.ReadAllAsync(_cts.Token), options, async (item, ct) =>
             {
+                var (line, context, generation) = item;
                 try
                 {
-                    var verdict = await _checker.CheckAsync(line.Text, recent.ToArray(), _cts.Token);
+                    var verdict = await Checker.CheckAsync(line.Text, context, ct);
+                    if (Interlocked.Exchange(ref _problem, null) is not null) _status.Writer.TryWrite("Fact checks are working again");
                     if (verdict is not null && generation == Volatile.Read(ref _generation)) _verdicts.Writer.TryWrite(new Checked(line, verdict));
                 }
-                catch (Exception e) when (!_cts.IsCancellationRequested)
+                catch (FactCheckUnavailableException e)
+                {
+                    // Once in the header, not on every line: the line itself just goes back to plain.
+                    if (Interlocked.Exchange(ref _problem, e.Message) != e.Message) _status.Writer.TryWrite($"Fact checks paused: {e.Message}");
+                    _log.LogWarning("Checking \"{Text}\" failed: {Problem}", line.Text, e.Message);
+                }
+                catch (Exception e) when (!ct.IsCancellationRequested)
                 {
                     _log.LogError(e, "Checking \"{Text}\" failed", line.Text);
                 }
@@ -176,10 +209,7 @@ public sealed partial class HudPipeline : IDisposable
                 {
                     _checking.Writer.TryWrite((line, false));
                 }
-
-                recent.Add(line.Text);
-                if (recent.Count > ContextLines) recent.RemoveAt(0);
-            }
+            });
         }
         catch (OperationCanceledException)
         {

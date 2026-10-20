@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoVoiceHud — review fixes (2026-10-20)</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1b1b1f; --soft: #5c5f66; --line: #d9dbe0; --bg: #f6f7f9; --card: #ffffff; --mark: #c81e2d; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ececf1; --soft: #a3a7b0; --line: #34363c; --bg: #17181b; --card: #212327; } }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 28px 0 10px; }
+  h3 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--soft); }
+  p.lead { color: var(--soft); margin: 0 0 20px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  .shot { position: relative; }
+  .shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; background: var(--mark); color: #fff;
+         font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+  ol.notes { list-style: none; margin: 12px 0 0; padding: 0; counter-reset: n; }
+  ol.notes li { counter-increment: n; position: relative; padding-left: 34px; margin: 0 0 10px; }
+  ol.notes li::before { content: counter(n); position: absolute; left: 0; top: 1px; width: 22px; height: 22px; border-radius: 50%;
+                        background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Review fixes: compact window, Settings page, setup first</h1>
+  <p class="lead">Debug build with the <code>--demo</code> forms, captured with <code>PrintWindow</code> at 420 × 320 (the minimum) and 1680 × 1077. "Before" is commit b5e16bc; "after" is the working tree on 2026-10-20.</p>
+
+  <h2>Live at the minimum size</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before</h3>
+      <div class="shot"><img src="261020-review-before-live.png" alt="Before: a title bar, a header row and a tab strip at the bottom leave room for two and a half lines">
+        <span class="pin" style="left:30%;top:6%">1</span><span class="pin" style="left:60%;top:17%">2</span><span class="pin" style="left:30%;top:90%">3</span></div>
+      <ol class="notes">
+        <li>A separate title bar, 32 px.</li>
+        <li>The header, 44 px, below it.</li>
+        <li>Live and Facts at the bottom, about 45 px.</li>
+      </ol>
+    </section>
+    <section class="side">
+      <h3>After</h3>
+      <div class="shot"><img src="261020-review-after-live.png" alt="After: the header is the title bar, Live and Facts sit on top, and three lines fit">
+        <span class="pin" style="left:30%;top:10%">1</span><span class="pin" style="left:52%;top:10%">2</span><span class="pin" style="left:22%;top:25%">3</span><span class="pin" style="left:8%;top:36%">4</span></div>
+      <ol class="notes">
+        <li>One 48 px row: the header is drawn into the title bar and the window is dragged by the headline.</li>
+        <li>A small spinner while a claim is checked; the blue bar no longer sits on the verdict bar.</li>
+        <li>Live and Facts at the top, sharing a row with Facts' count and Copy facts.</li>
+        <li>Clock times, the same as on Facts, instead of minutes:seconds that restarted at every unmute.</li>
+      </ol>
+    </section>
+  </div>
+
+  <h2>Facts on a wide window</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before</h3>
+      <div class="shot"><img src="261020-review-before-facts-wide.png" alt="Before: the count and Copy facts row sits about 210 px left of the list">
+        <span class="pin" style="left:27%;top:9%">1</span><span class="pin" style="left:36%;top:12%">2</span></div>
+      <ol class="notes">
+        <li>The count and Copy facts…</li>
+        <li>…out of line with the list below.</li>
+      </ol>
+    </section>
+    <section class="side">
+      <h3>After</h3>
+      <div class="shot"><img src="261020-review-after-facts-wide.png" alt="After: the tabs, the count, Copy facts and the list share one centred column">
+        <span class="pin" style="left:23%;top:7%">1</span><span class="pin" style="left:77%;top:7%">2</span></div>
+      <ol class="notes">
+        <li>Everything sits in one 900 px column.</li>
+        <li>The count and Copy facts end where the list ends.</li>
+      </ol>
+    </section>
+  </div>
+
+  <h2>Settings and first run</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before: a flyout</h3>
+      <div class="shot"><img src="261020-review-before-settings.png" alt="Before: a flyout that applied whatever was typed when it closed, including when another window was clicked">
+        <span class="pin" style="left:12%;top:75%">1</span></div>
+      <ol class="notes">
+        <li>Check, then changes applied when the flyout closed, which included switching to the Azure portal to copy the key. Every change reloaded Whisper.</li>
+      </ol>
+    </section>
+    <section class="side">
+      <h3>After: a page with Apply and Cancel</h3>
+      <div class="shot"><img src="261020-review-after-settings.png" alt="After: the Settings page, with Quit, Cancel and Apply always in view">
+        <span class="pin" style="left:68%;top:90%">1</span><span class="pin" style="left:86%;top:90%">2</span></div>
+      <ol class="notes">
+        <li>Cancel (or Esc, or ⚙) puts back what was applied.</li>
+        <li>Apply checks a new endpoint or key with one call first. The endpoint, key and Wikipedia only replace the checker.</li>
+      </ol>
+    </section>
+  </div>
+  <div class="pair">
+    <section class="side">
+      <h3>After: first run</h3>
+      <div class="shot"><img src="261020-review-after-setup.png" alt="After: the first-run page says to connect the fact checker; Cancel is unavailable and the microphone stays off">
+        <span class="pin" style="left:35%;top:10%">1</span><span class="pin" style="left:50%;top:47%">2</span><span class="pin" style="left:69%;top:90%">3</span></div>
+      <ol class="notes">
+        <li>The header says what to do.</li>
+        <li>Nothing is heard until an endpoint and key pass the check.</li>
+        <li>Nothing to cancel back to.</li>
+      </ol>
+    </section>
+  </div>
+</main>
+</body>
+</html>

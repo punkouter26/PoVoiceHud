@@ -12,27 +12,31 @@
     PersistenceId="Hud"
     Width="560"
     Height="560">
-    <!-- A standard window (title bar, minimize, maximize, close, resizable), kept on top of other windows so it can sit beside a call. -->
+    <!-- A standard window (minimize, maximize, close, resizable, snaps), kept on top of other windows so it can sit beside a call.
+         The header is drawn into the title bar, so the window's chrome is one 48 px row. -->
     <winuiex:WindowEx.SystemBackdrop>
         <MicaBackdrop />
     </winuiex:WindowEx.SystemBackdrop>
     <Grid x:Name="Root">
         <Grid.RowDefinitions>
-            <RowDefinition Height="44" />
+            <RowDefinition Height="48" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Header: mic and level, the headline (latest verdict or status), settings -->
-        <Grid x:Name="Pill" Padding="8,0" ColumnSpacing="6">
+        <!-- Header, in the title bar: mic and level, the headline (latest verdict or status, and the place to drag the window by),
+             settings, then room for the caption buttons -->
+        <Grid x:Name="Header" Padding="8,0,0,0" ColumnSpacing="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition x:Name="CaptionSpace" Width="138" />
             </Grid.ColumnDefinitions>
             <!-- Microphone plus a five-bar level meter: the bars light up left to right as you speak. Click to mute. -->
             <Button x:Name="MicButton" Style="{StaticResource HudIconButton}" Width="NaN" Padding="6,0" Command="{x:Bind ViewModel.ToggleMuteCommand}"
+                    IsEnabled="{x:Bind ViewModel.ShowsPages, Mode=OneWay}"
                     AutomationProperties.Name="{x:Bind local:MainWindow.MicName(ViewModel.IsMuted), Mode=OneWay}"
-                    ToolTipService.ToolTip="{x:Bind local:MainWindow.MicTip(ViewModel.StatusText, ViewModel.MuteHint), Mode=OneWay}">
+                    ToolTipService.ToolTip="{x:Bind local:MainWindow.MicTip(ViewModel.StatusText, ViewModel.IsMuted), Mode=OneWay}">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                     <Grid>
                         <FontIcon Glyph="&#xE720;" FontSize="14" Foreground="{ThemeResource SystemFillColorSuccessBrush}"
@@ -61,16 +65,25 @@
                     </StackPanel>
                 </StackPanel>
             </Button>
-            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" Style="{StaticResource HudHeadline}" Margin="6,0"
-                       AutomationProperties.HelpText="{x:Bind ViewModel.FactsSummary, Mode=OneWay}"
-                       ToolTipService.ToolTip="{x:Bind ViewModel.FactsSummary, Mode=OneWay}" />
-            <Button Grid.Column="2" x:Name="SettingsButton" Style="{StaticResource HudIconButton}"
+            <!-- The drag region: everything in it is passive, so the window moves by the headline -->
+            <Grid x:Name="DragArea" Grid.Column="1" Background="Transparent" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{x:Bind ViewModel.Headline, Mode=OneWay}" Style="{StaticResource HudHeadline}" Margin="6,0,0,0"
+                           AutomationProperties.HelpText="{x:Bind ViewModel.TallySummary, Mode=OneWay}" />
+                <ProgressRing Grid.Column="1" Width="16" Height="16" IsActive="{x:Bind ViewModel.IsChecking, Mode=OneWay}"
+                              AutomationProperties.Name="Checking a claim" />
+            </Grid>
+            <Button Grid.Column="2" x:Name="SettingsButton" Style="{StaticResource HudIconButton}" Command="{x:Bind ViewModel.ToggleSettingsCommand}"
                     AutomationProperties.Name="Settings" ToolTipService.ToolTip="Settings">
                 <FontIcon Glyph="&#xE713;" FontSize="14" />
             </Button>
 
-            <!-- Bottom edge of the header: this session's verdicts as shares of green, red and amber, or a running bar while a claim is checked -->
-            <Grid Grid.ColumnSpan="3" Height="3" Margin="-8,0" VerticalAlignment="Bottom">
+            <!-- Bottom edge of the header: this session's verdicts as shares of green, red and amber; its tooltip says how many -->
+            <Grid Grid.ColumnSpan="4" Height="3" Margin="-8,0,0,0" VerticalAlignment="Bottom"
+                  AutomationProperties.Name="{x:Bind ViewModel.TallySummary, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind ViewModel.TallySummary, Mode=OneWay}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="{x:Bind local:MainWindow.Share(ViewModel.Supported), Mode=OneWay}" />
                     <ColumnDefinition Width="{x:Bind local:MainWindow.Share(ViewModel.Contradicted), Mode=OneWay}" />
@@ -80,69 +93,36 @@
                 <Border Grid.Column="1" Background="{ThemeResource SystemFillColorCriticalBrush}" />
                 <Border Grid.Column="2" Background="{ThemeResource SystemFillColorCautionBrush}" />
             </Grid>
-            <ProgressBar Grid.ColumnSpan="3" Margin="-8,0" VerticalAlignment="Bottom" IsIndeterminate="True"
-                         AutomationProperties.Name="Checking a claim" Visibility="{x:Bind ViewModel.IsChecking, Mode=OneWay}" />
         </Grid>
 
-        <!-- Live or Facts, filling the window, and the switch between them below -->
-        <Grid Grid.Row="1" x:Name="Panel" Background="{ThemeResource HudScrimBrush}" Padding="8,6,8,4" RowSpacing="4">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <!-- Live: every sentence as it is heard. A claim reads "Checking…" while the model works, then turns green (correct)
-                 or red (incorrect) with the reason under it; "can't tell" is a quiet note. Sentences that are not claims are dimmed. -->
-            <Grid x:Name="LivePage" Visibility="{x:Bind ViewModel.IsLiveOpen, Mode=OneWay}">
-                <ScrollViewer x:Name="LiveScroll" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
-                              AutomationProperties.Name="What was said, with each claim's verdict">
-                    <ItemsRepeater x:Name="LiveList" ItemsSource="{x:Bind ViewModel.Live}" ElementPrepared="Highlight_ElementPrepared" MaxWidth="900">
-                        <ItemsRepeater.Layout>
-                            <StackLayout Spacing="4" />
-                        </ItemsRepeater.Layout>
-                        <ItemsRepeater.ItemTemplate>
-                            <DataTemplate x:DataType="vm:LiveLineViewModel">
-                                <Border Padding="10,6" CornerRadius="6" Background="{x:Bind local:MainWindow.LineBack(State), Mode=OneWay}">
-                                    <StackPanel Spacing="2">
-                                        <TextBlock Style="{StaticResource HudLine}" Foreground="{x:Bind local:MainWindow.LineText(State), Mode=OneWay}">
-                                            <Run Text="{x:Bind Stamp}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                            <Run Text="{x:Bind Speaker}" FontWeight="SemiBold" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                            <Run Text="{x:Bind Text}" />
-                                        </TextBlock>
-                                        <Grid ColumnSpacing="6" Visibility="{x:Bind HasNote, Mode=OneWay}">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <FontIcon Glyph="{x:Bind local:MainWindow.LineGlyph(State), Mode=OneWay}" FontSize="12" VerticalAlignment="Top" Margin="0,2,0,0"
-                                                      Foreground="{x:Bind local:MainWindow.LineFore(State), Mode=OneWay}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind Note, Mode=OneWay}" Style="{StaticResource HudCaption}"
-                                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsRepeater.ItemTemplate>
-                    </ItemsRepeater>
-                </ScrollViewer>
-                <TextBlock Text="Listening. What you say appears here, and each claim is checked as you go: green is correct, red is incorrect."
-                           Visibility="{x:Bind ViewModel.NoLive, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap"
-                           VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="360" />
-            </Grid>
-
-            <!-- Facts: only the claims found correct or incorrect, newest first, each with its reason and source -->
-            <Grid x:Name="FactsPage" Visibility="{x:Bind ViewModel.IsFactsOpen, Mode=OneWay}" RowSpacing="6">
+        <!-- The pages, in one column that keeps a readable width when the window is wide -->
+        <Grid Grid.Row="1" x:Name="Panel" Background="{ThemeResource HudScrimBrush}" Padding="8,4,8,8">
+            <Grid MaxWidth="900" RowSpacing="6">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <Grid ColumnSpacing="8" Margin="4,0,0,0" MaxWidth="900">
+
+                <!-- Live or Facts, and on Facts the count and Copy facts -->
+                <Grid ColumnSpacing="8" Visibility="{x:Bind ViewModel.ShowsPages, Mode=OneWay}">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="{x:Bind ViewModel.FactsSummary, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Click="CopyFacts_Click" IsEnabled="{x:Bind ViewModel.HasFacts, Mode=OneWay}" Padding="10,4"
+                    <SelectorBar x:Name="PageSwitch" SelectionChanged="PageSwitch_SelectionChanged" Padding="0">
+                        <SelectorBarItem x:Name="LiveTab" Text="Live" ToolTipService.ToolTip="Everything said, with each claim highlighted by its verdict">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE720;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                        <SelectorBarItem x:Name="FactsTab" Text="Facts" ToolTipService.ToolTip="Only the claims found correct or incorrect">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE73E;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
+                    </SelectorBar>
+                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.FactsSummary, Mode=OneWay}" Style="{StaticResource HudCaption}"
+                               VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"
+                               Visibility="{x:Bind ViewModel.ShowsFacts, Mode=OneWay}" />
+                    <Button Grid.Column="2" Click="CopyFacts_Click" IsEnabled="{x:Bind ViewModel.HasFacts, Mode=OneWay}" Padding="10,4"
+                            Visibility="{x:Bind ViewModel.ShowsFacts, Mode=OneWay}"
                             ToolTipService.ToolTip="Copy every fact as a list, to paste into notes, a chat or an email">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE8C8;" FontSize="13" />
@@ -150,54 +130,93 @@
                         </StackPanel>
                     </Button>
                 </Grid>
-                <ScrollViewer Grid.Row="1" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Verified facts">
-                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.Facts}" MaxWidth="900">
-                        <ItemsRepeater.Layout>
-                            <StackLayout Spacing="6" />
-                        </ItemsRepeater.Layout>
-                        <ItemsRepeater.ItemTemplate>
-                            <DataTemplate x:DataType="vm:FactViewModel">
-                                <Border Padding="10,8" CornerRadius="6" Background="{x:Bind local:MainWindow.FactBack(IsCorrect)}">
-                                    <Grid ColumnSpacing="10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <FontIcon Glyph="{x:Bind local:MainWindow.FactGlyph(IsCorrect)}" Foreground="{x:Bind local:MainWindow.FactFore(IsCorrect)}"
-                                                  FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0" AutomationProperties.Name="{x:Bind Label}" />
-                                        <StackPanel Grid.Column="1" Spacing="2">
-                                            <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
-                                            <TextBlock Style="{StaticResource HudCaption}" Foreground="{ThemeResource TextFillColorPrimaryBrush}" TextWrapping="Wrap">
-                                                <Run Text="{x:Bind Label}" FontWeight="SemiBold" /><Run Text=" — " /><Run Text="{x:Bind Reason}" />
-                                            </TextBlock>
-                                            <HyperlinkButton Command="{x:Bind OpenLinkCommand}" Visibility="{x:Bind HasLink}" Style="{StaticResource HudLink}" Margin="-4,0,0,0">
-                                                <TextBlock Text="{x:Bind LinkLabel}" TextTrimming="CharacterEllipsis" />
-                                            </HyperlinkButton>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="2">
-                                            <TextBlock Text="{x:Bind Time}" Style="{StaticResource HudCaption}" HorizontalAlignment="Right" />
-                                            <TextBlock Text="{x:Bind Speaker}" Style="{StaticResource HudCaption}" HorizontalAlignment="Right" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsRepeater.ItemTemplate>
-                    </ItemsRepeater>
-                </ScrollViewer>
-                <TextBlock Grid.Row="1" Text="No facts yet. Claims the model finds correct or incorrect are listed here, newest first."
-                           Visibility="{x:Bind ViewModel.NoFacts, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap"
-                           VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="360" />
-            </Grid>
 
-            <SelectorBar x:Name="PageSwitch" Grid.Row="1" SelectionChanged="PageSwitch_SelectionChanged" Padding="0">
-                <SelectorBarItem x:Name="LiveTab" Text="Live" ToolTipService.ToolTip="Everything said, with each claim highlighted by its verdict">
-                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE720;" /></SelectorBarItem.Icon>
-                </SelectorBarItem>
-                <SelectorBarItem x:Name="FactsTab" Text="Facts" ToolTipService.ToolTip="Only the claims found correct or incorrect">
-                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE73E;" /></SelectorBarItem.Icon>
-                </SelectorBarItem>
-            </SelectorBar>
+                <!-- Live: every sentence as it is heard. A claim reads "Checking…" while the model works, then turns green (correct)
+                     or red (incorrect) with the reason under it; "can't tell" is a quiet note. Sentences that are not claims are dimmed. -->
+                <Grid Grid.Row="1" x:Name="LivePage" Visibility="{x:Bind ViewModel.ShowsLive, Mode=OneWay}">
+                    <ScrollViewer x:Name="LiveScroll" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
+                                  AutomationProperties.Name="What was said, with each claim's verdict">
+                        <ItemsRepeater x:Name="LiveList" ItemsSource="{x:Bind ViewModel.Live}" ElementPrepared="Highlight_ElementPrepared">
+                            <ItemsRepeater.Layout>
+                                <StackLayout Spacing="4" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="vm:LiveLineViewModel">
+                                    <Border Padding="10,6" CornerRadius="6" Background="{x:Bind local:MainWindow.LineBack(State), Mode=OneWay}">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Style="{StaticResource HudLine}" Foreground="{x:Bind local:MainWindow.LineText(State), Mode=OneWay}">
+                                                <Run Text="{x:Bind Stamp}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <Run Text="{x:Bind Speaker}" FontWeight="SemiBold" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                                <Run Text="{x:Bind Text}" />
+                                            </TextBlock>
+                                            <Grid ColumnSpacing="6" Visibility="{x:Bind HasNote, Mode=OneWay}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <FontIcon Glyph="{x:Bind local:MainWindow.LineGlyph(State), Mode=OneWay}" FontSize="12" VerticalAlignment="Top" Margin="0,2,0,0"
+                                                          Foreground="{x:Bind local:MainWindow.LineFore(State), Mode=OneWay}" />
+                                                <TextBlock Grid.Column="1" Text="{x:Bind Note, Mode=OneWay}" Style="{StaticResource HudCaption}"
+                                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" TextWrapping="Wrap" />
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                    </ScrollViewer>
+                    <TextBlock Text="Listening. What you say appears here, and each claim is checked as you go: green is correct, red is incorrect."
+                               Visibility="{x:Bind ViewModel.NoLive, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap"
+                               VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="360" />
+                </Grid>
+
+                <!-- Facts: only the claims found correct or incorrect, newest first, each with its reason and source -->
+                <Grid Grid.Row="1" x:Name="FactsPage" Visibility="{x:Bind ViewModel.ShowsFacts, Mode=OneWay}">
+                    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Verified facts">
+                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.Facts}">
+                            <ItemsRepeater.Layout>
+                                <StackLayout Spacing="6" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FactViewModel">
+                                    <Border Padding="10,8" CornerRadius="6" Background="{x:Bind local:MainWindow.FactBack(IsCorrect)}">
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon Glyph="{x:Bind local:MainWindow.FactGlyph(IsCorrect)}" Foreground="{x:Bind local:MainWindow.FactFore(IsCorrect)}"
+                                                      FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0" AutomationProperties.Name="{x:Bind Label}" />
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                                                <TextBlock Style="{StaticResource HudCaption}" Foreground="{ThemeResource TextFillColorPrimaryBrush}" TextWrapping="Wrap">
+                                                    <Run Text="{x:Bind Label}" FontWeight="SemiBold" /><Run Text=" — " /><Run Text="{x:Bind Reason}" />
+                                                </TextBlock>
+                                                <HyperlinkButton Command="{x:Bind OpenLinkCommand}" Visibility="{x:Bind HasLink}" Style="{StaticResource HudLink}" Margin="-4,0,0,0">
+                                                    <TextBlock Text="{x:Bind LinkLabel}" TextTrimming="CharacterEllipsis" />
+                                                </HyperlinkButton>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="{x:Bind Time, Mode=OneWay}" Style="{StaticResource HudCaption}" HorizontalAlignment="Right" />
+                                                <TextBlock Text="{x:Bind Speaker}" Style="{StaticResource HudCaption}" HorizontalAlignment="Right" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                    </ScrollViewer>
+                    <TextBlock Text="No facts yet. Claims the model finds correct or incorrect are listed here, newest first."
+                               Visibility="{x:Bind ViewModel.NoFacts, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap"
+                               VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="360" />
+                </Grid>
+
+                <!-- Settings: in the window rather than a flyout, so switching windows to copy a key does not close or apply them -->
+                <ContentControl x:Name="SettingsHost" Grid.RowSpan="2" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                HorizontalAlignment="Stretch" VerticalAlignment="Stretch" IsTabStop="False"
+                                Visibility="{x:Bind ViewModel.ShowsSettings, Mode=OneWay}" />
+            </Grid>
         </Grid>
     </Grid>
 </winuiex:WindowEx>
