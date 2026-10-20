@@ -22,7 +22,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     // Properties that report on an action or on the view rather than hold a setting.
     private static readonly string[] NotSettings =
-        [nameof(TestResult), nameof(RepoTestResult), nameof(FoundryError), nameof(RepoError), nameof(IsEditingModel), nameof(IsModelCollapsed)];
+        [nameof(TestResult), nameof(RepoTestResult), nameof(FoundryError), nameof(RepoError), nameof(IsEditingModel), nameof(IsModelCollapsed), nameof(DiagnosticsResult)];
 
     private readonly Func<string, string?> _readSecret;
     private readonly Action<string, string> _writeSecret;
@@ -30,6 +30,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly Action<Settings> _save;
     private readonly Func<Uri, string, string?, ILanguageModel> _connect;
     private readonly Func<string?> _ollamaModel;
+    private readonly Func<Task<string>>? _collectDiagnostics;
     private Settings _original;
 
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsFoundry), nameof(ModelSummary))] private string _provider;
@@ -45,24 +46,37 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private string? _foundryError;
     [ObservableProperty] private string? _testResult;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(IsModelCollapsed))] private bool _isEditingModel;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(LookUpNote))] private bool _lookUpClaims;
+    [ObservableProperty] private bool _startWithWindows;
+    [ObservableProperty] private EffectsLevel _effects;
+    [ObservableProperty] private bool _sounds;
+    [ObservableProperty] private string? _diagnosticsResult;
 
     /// <param name="connect">Builds the model client for "Test" from endpoint, model and key.</param>
     /// <param name="ollamaModel">A model the local Ollama has pulled (null if it is not running), offered when switching to Ollama.</param>
+    /// <param name="collectDiagnostics">Writes the diagnostics zip and says where it went.</param>
     public SettingsViewModel(Settings settings, Func<string, string?> readSecret, Action<string, string> writeSecret,
-        Func<Task<string?>> pickFolder, Action<Settings> save, Func<Uri, string, string?, ILanguageModel> connect, Func<string?>? ollamaModel = null)
+        Func<Task<string?>> pickFolder, Action<Settings> save, Func<Uri, string, string?, ILanguageModel> connect, Func<string?>? ollamaModel = null,
+        Func<Task<string>>? collectDiagnostics = null)
     {
         (_original, _readSecret, _writeSecret, _pickFolder, _save, _connect) = (settings, readSecret, writeSecret, pickFolder, save, connect);
         _ollamaModel = ollamaModel ?? (() => null);
+        _collectDiagnostics = collectDiagnostics;
         _provider = FoundryClient.IsLocal(settings.FoundryEndpoint) ? Ollama : Foundry;
         _repoPath = settings.RepoPath;
         _foundryEndpoint = settings.FoundryEndpoint;
         _foundryModel = settings.FoundryModel;
+        _lookUpClaims = settings.LookUpClaims;
+        _startWithWindows = settings.StartWithWindows;
+        _effects = settings.Effects;
+        _sounds = settings.Sounds;
         _hasAzdoPat = readSecret(CredentialStore.AzdoPat) is not null;
         _hasFoundryKey = readSecret(CredentialStore.FoundryKey) is not null;
         _isEditingModel = !ModelIsSetUp;
     }
 
     public IReadOnlyList<string> Providers { get; } = [Ollama, Foundry];
+    public IReadOnlyList<EffectsLevel> EffectsLevels { get; } = [EffectsLevel.Full, EffectsLevel.Subtle, EffectsLevel.Off];
 
     public bool IsFoundry => Provider == Foundry;
     public bool HasRepo => Blank(RepoPath) is not null;
@@ -70,6 +84,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>The model fields are folded into <see cref="ModelSummary"/> until "Change…" is pressed.</summary>
     public bool IsModelCollapsed => !IsEditingModel;
     public string ModelSummary => $"{(IsFoundry ? Foundry : "Local Ollama")} · {FoundryModel}";
+
+    /// <summary>What the Wikipedia switch means for privacy, which matters most when the model is local.</summary>
+    public string LookUpNote => LookUpClaims
+        ? "The key words of each claim go to Wikipedia's search, and the verdict can link the article it used."
+        : "Claims are judged from the model's own knowledge; nothing goes to Wikipedia.";
 
     /// <summary>True while the settings are on screen; set by the window. A folder picked after they closed is applied straight away.</summary>
     public bool IsOpen { get; set; }
@@ -88,6 +107,10 @@ public sealed partial class SettingsViewModel : ObservableObject
             RepoPath = Blank(RepoPath),
             FoundryEndpoint = Blank(FoundryEndpoint),
             FoundryModel = FoundryModel,
+            LookUpClaims = LookUpClaims,
+            StartWithWindows = StartWithWindows,
+            Effects = Effects,
+            Sounds = Sounds,
         };
     }
 
@@ -172,6 +195,22 @@ public sealed partial class SettingsViewModel : ObservableObject
         catch (TimeoutException e)
         {
             TestResult = $"✗ {e.Message}";
+        }
+    }
+
+    /// <summary>Zips the logs and settings (no transcripts, no secrets) for a bug report.</summary>
+    [RelayCommand]
+    private async Task CollectDiagnostics()
+    {
+        if (_collectDiagnostics is null) return;
+        DiagnosticsResult = "Collecting…";
+        try
+        {
+            DiagnosticsResult = await _collectDiagnostics();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            DiagnosticsResult = $"✗ {e.Message}";
         }
     }
 

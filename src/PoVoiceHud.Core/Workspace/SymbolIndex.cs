@@ -47,6 +47,30 @@ public sealed partial class SymbolIndex
         return new SymbolIndex(symbols);
     }
 
+    // Words that recur in every codebase's file names: Whisper already knows them, so they would only take room in its prompt.
+    private static readonly HashSet<string> Generic = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Test", "Tests", "Service", "Services", "Controller", "Model", "Models", "View", "Views", "Helper", "Helpers", "Extensions",
+        "Factory", "Provider", "Options", "Config", "Configuration", "Base", "Program", "Startup", "Handler", "Manager", "Repository",
+        "Context", "Index", "Interface", "Request", "Response", "Command", "Query", "Settings", "Snapshot", "Migration", "Page",
+    };
+
+    /// <summary>
+    /// The repository's own words for Whisper's prompt, most useful first, so that names it would otherwise mishear come out
+    /// spelled as in the code: EF entity names, then the parts of file names that recur most (the project's domain terms).
+    /// </summary>
+    public IEnumerable<string> Vocabulary()
+    {
+        var entities = Symbols.Where(s => s.Kind == SymbolKind.Entity).Select(s => s.Name);
+        var recurring = Symbols.Where(s => s.Kind == SymbolKind.File)
+            .SelectMany(s => NamePart().Matches(s.Name).Select(m => m.Value))
+            .Where(w => w.Length >= 4 && !Generic.Contains(w))
+            .GroupBy(w => w, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => g.First());
+        return entities.Concat(recurring).Distinct(StringComparer.OrdinalIgnoreCase);
+    }
+
     private static IEnumerable<Symbol> Entities(string path, IEnumerable<string> lines)
     {
         var seen = new HashSet<string>();
@@ -62,4 +86,8 @@ public sealed partial class SymbolIndex
 
     [GeneratedRegex(@"\.Entity\(""([\w.]+)""")]
     private static partial Regex EntityCall();
+
+    /// <summary>One part of a PascalCase name: "PMIS" and "Sync" in "PMISSyncJob", "Invoice" in "InvoiceService".</summary>
+    [GeneratedRegex("[A-Z]{2,}(?=[A-Z][a-z]|[^A-Za-z]|$)|[A-Z][a-z0-9]+")]
+    private static partial Regex NamePart();
 }

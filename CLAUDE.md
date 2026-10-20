@@ -23,6 +23,8 @@ dotnet test --project tests/PoVoiceHud.Core.Tests -- --filter-class "*FactCheckP
 dotnet run --project src/PoVoiceHud.App                                    # the real app: opens the microphone
 dotnet run --project src/PoVoiceHud.App -- --demo                          # sample cards, no audio (Debug)
 dotnet run --project src/PoVoiceHud.App -- --demo --settings               # the settings layout, no audio (Debug; --all unfolds every field)
+dotnet run --project src/PoVoiceHud.App -- --demo --fx supported          # play one effect and hold a frame (Debug; see MainWindow.Preview; --effects Off|Subtle|Full)
+pwsh build/pack.ps1                                                        # Setup.exe + update packages in artifacts/releases (Velopack)
 ```
 
 ## How a sentence becomes a card
@@ -32,7 +34,8 @@ dotnet run --project src/PoVoiceHud.App -- --demo --settings               # the
 - **Providers** implement `IInsightProvider` (`Handles` is an `Intent` flag; return null for "nothing to say"). All wiring is in `ServiceCollectionExtensions.AddPoVoiceHudCore`. A provider that is missing its configuration is registered as `UnconfiguredProvider`, which says why, rather than being left out. `FoundryClient` talks to both Azure AI Foundry and Ollama; when the main model is in the cloud and Ollama is running, a local Ollama model screens out chatter first.
 - **Modes** are presets in `Settings.ApplyMode`: Simple is mic + FactCheck; Repo is mic and call audio + every source.
 - **Settings changes** (`App.ApplyAsync`): the whole DI container is disposed and `StartAsync` builds a new one. A run counter stops a slower, older start from installing its pipeline. The only state is `settings.json` and Credential Manager (`CredentialStore`); for secrets, follow the existing Credential Manager pattern.
-- **Design decisions**, with their reasons, are in `docs/adr/` (CPU Whisper, a deterministic router rather than an LLM one, fact-checking on Foundry).
+- **Effects** (`App/Fx`, ADR-0005): `HudEffects` reacts to `HudViewModel` (`Arrived`, `IsChecking`, `IsMuted`, `MicLevel`, `Rated`, `Milestone`) and draws ComputeSharp shaders with Win2D, on a timer that stops when nothing moves. `Motion` holds the Composition animations, and `Core/Fx` holds the physics. Sounds are `Core/Audio/SoundPalette`, every cue ≤ 240 ms. `Effects`/`Sounds` changes apply without rebuilding the pipeline.
+- **Design decisions**, with their reasons, are in `docs/adr/` (CPU Whisper, a deterministic router rather than an LLM one, fact-checking on Foundry, Wikipedia evidence, native GPU effects).
 
 ## Checking a UI change
 
@@ -40,5 +43,5 @@ The app is a desktop window, so the browser tools cannot drive it, and a setting
 
 ## Limits worth knowing
 
-- 100 unit tests and 50 integration tests at most (`[Trait("Category", "Integration")]` marks the latter). The suite is at 100 and 46.
+- 100 unit tests and 50 integration tests at most (`[Trait("Category", "Integration")]` marks the latter). The suite is at 100 and 47.
 - The Azure DevOps provider has never been run against a live organization.

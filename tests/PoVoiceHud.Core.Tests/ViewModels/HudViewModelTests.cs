@@ -1,4 +1,5 @@
 using PoVoiceHud.Core.Audio;
+using PoVoiceHud.Core.Config;
 using PoVoiceHud.Core.Providers;
 using PoVoiceHud.Core.Routing;
 using PoVoiceHud.Core.ViewModels;
@@ -177,6 +178,39 @@ public class HudViewModelTests
         Assert.Equal("✅ 2  ❌ 1", _vm.Tally);
         Assert.Equal("This session — you: ✅ 1 · the call: ✅ 1  ❌ 1", _vm.TallyDetail);
         Assert.Equal(Verdict.Supported, _vm.Shelf[0].Verdict);
+    }
+
+    [Fact]
+    public void Cards_can_be_rated_and_put_away_say_who_spoke_on_a_call_and_muting_suggests_a_recap()
+    {
+        var rated = new List<(string, Rating)>();
+        _vm.Rated += c => rated.Add((c.Title, c.Rating));
+        _vm.Apply(new Settings { AudioInput = AudioInput.Both });   // call audio heard: cards say who spoke
+        _vm.Push([Card("[GIT] file1")], T0, SourceHint.Teams);
+        _vm.Push([Card("[GIT] file2")], T0);
+
+        var focus = _vm.Focus!;
+        Assert.True(focus.ShowSpeaker);
+        Assert.Equal("You", focus.Speaker);
+        Assert.Equal("Them", _vm.Shelf[0].Speaker);
+
+        focus.RateUpCommand.Execute(null);
+        focus.RateDownCommand.Execute(null);
+        focus.RateDownCommand.Execute(null);   // pressing it again takes the rating back
+        Assert.Equal([("file2", Rating.Up), ("file2", Rating.Down), ("file2", Rating.None)], rated);
+        _vm.SetRatings(9, 1);
+        Assert.Equal("Your ratings, last 7 days: 👍 9  👎 1 (90% right)", _vm.TallyDetail);
+
+        focus.DismissCommand.Execute(null);
+        Assert.Equal("file1", _vm.Focus?.Title);   // the newest history card takes its place
+        Assert.Empty(_vm.Shelf);
+
+        _vm.RecapHotkey = "Ctrl+Alt+S";
+        for (var i = 0; i < 6; i++) _vm.AddTranscript(new TranscriptLine(SourceHint.Mic, TimeSpan.FromSeconds(i), $"line {i}"));
+        _vm.ToggleMuteCommand.Execute(null);
+        Assert.Equal("Muted · recap this call? Ctrl+Alt+S", _vm.Headline);
+        _vm.RecapDone();
+        Assert.Equal("Muted", _vm.Headline);
     }
 
     [Fact]

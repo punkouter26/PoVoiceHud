@@ -1,11 +1,16 @@
+using System.Collections.Specialized;
+using System.Diagnostics;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using PoVoiceHud.App.Fx;
 using PoVoiceHud.Core;
 using PoVoiceHud.Core.Audio;
+using PoVoiceHud.Core.Config;
+using PoVoiceHud.Core.Fx;
 using PoVoiceHud.Core.ViewModels;
 using WinUIEx;
 
@@ -17,21 +22,37 @@ public sealed partial class MainWindow : WindowEx
     private const int MaxExpandedHeight = 640;
 
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(1) };
-    // Eases the window towards _targetHeight a frame at a time: AppWindow has no animated resize of its own.
+    // Springs the window towards its target height a tick at a time: AppWindow has no animated resize of its own.
     private readonly DispatcherTimer _resize = new() { Interval = TimeSpan.FromMilliseconds(15) };
-    private double _targetHeight = PillHeight;
+    private readonly Spring _height = new(stiffness: 520);
+    private readonly Stopwatch _resizeClock = new();
     private bool _settingsOpen;
+    private bool _newTop;   // a card was just pushed onto the history: its line drops in rather than just appearing
 
     public MainWindow(HudViewModel viewModel)
     {
         ViewModel = viewModel;
         InitializeComponent();
+        AppWindow.SetIcon(IconPath);
+        Effects = new HudEffects(viewModel, new HudParts(Root, Back, Front, RibbonSlot, LevelBars, Busy, HeadlineText, TallyText, MicButton, Expanded));
         ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(HudViewModel.MicLevel)) ShowLevel(ViewModel.MicLevel);
             // The panel has to be laid out before its height is known, hence the low-priority hop.
             if (e.PropertyName == nameof(HudViewModel.IsExpanded)) DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, ApplyHeight);
+            if (e.PropertyName == nameof(HudViewModel.IsConstellationOpen))
+            {
+                if (ViewModel.IsConstellationOpen) Stars.Show(ViewModel.Session);
+                else Stars.Sleep();
+            }
         };
+        ViewModel.Shelf.CollectionChanged += (_, e) => _newTop |= e is { Action: NotifyCollectionChangedAction.Add, NewStartingIndex: 0 };
+        ViewModel.Arrived += _ =>
+        {
+            if (ViewModel.IsConstellationOpen) Stars.Show(ViewModel.Session);
+        };
+        // Clicking a star brings its card back, if it is still in the history.
+        Stars.Picked += card => ViewModel.ShowCommand.Execute(card);
         // WinUIEx restores the persisted size on first activation, so re-apply the state-driven height once after that.
         // (Activated also fires on deactivation, including while closing, when Resize is no longer valid.)
         void OnFirstActivation(object sender, WindowActivatedEventArgs e)
@@ -48,10 +69,18 @@ public sealed partial class MainWindow : WindowEx
         {
             _tick.Stop();
             _resize.Stop();
+            Effects.Dispose();
+            Stars.Dispose();
         };
     }
 
     public HudViewModel ViewModel { get; }
+
+    /// <summary>Shaders, particles and sounds (G1–G10); the app hands it the settings.</summary>
+    internal HudEffects Effects { get; }
+
+    /// <summary>The app icon, copied next to the exe: the window, the tray and the installer all use it.</summary>
+    public static string IconPath { get; } = Path.Combine(AppContext.BaseDirectory, "Assets", "PoVoiceHud.ico");
 
     /// <summary>The window is exactly as tall as the pill plus whatever the expanded panel currently holds.</summary>
     private void ApplyHeight()
@@ -60,19 +89,26 @@ public sealed partial class MainWindow : WindowEx
         // Height is the outer window; the frame Windows draws around the content has to be added on top of the content's height.
         var scale = Content.XamlRoot?.RasterizationScale ?? 1;
         var frame = (AppWindow.Size.Height - AppWindow.ClientSize.Height) / scale;
-        _targetHeight = PillHeight + frame + (ViewModel.IsExpanded ? Math.Min(Expanded.ActualHeight, MaxExpandedHeight) : 0);
+        _height.Target = PillHeight + frame + (ViewModel.IsExpanded ? Math.Min(Expanded.ActualHeight, MaxExpandedHeight) : 0);
+        if (!_resize.IsEnabled) (_height.Value, _height.Velocity) = (Height, 0);
+        // G5: at Full the window overshoots a few pixels and settles; at Subtle it arrives without overshoot; at Off it jumps.
+        _height.DampingRatio = Motion.Level == EffectsLevel.Full ? 0.78 : 1;
+        _resizeClock.Restart();
         _resize.Start();
     }
 
     private void StepHeight()
     {
-        var remaining = _targetHeight - Height;
-        if (Math.Abs(remaining) < 2)
-        {
-            Height = _targetHeight;
-            _resize.Stop();
-        }
-        else Height += remaining * 0.35;
+        var settled = Motion.Level == EffectsLevel.Off || _height.Step(_resizeClock.Elapsed.TotalSeconds);
+        _resizeClock.Restart();
+        Height = settled ? _height.Target : Math.Max(PillHeight, _height.Value);
+        if (settled) _resize.Stop();
+    }
+
+    private void Shelf_ElementPrepared(ItemsRepeater sender, ItemsRepeaterElementPreparedEventArgs args)
+    {
+        Motion.Slide(args.Element, args.Index == 0 && _newTop);
+        if (args.Index == 0) _newTop = false;
     }
 
     private void Expanded_SizeChanged(object sender, SizeChangedEventArgs e) => ApplyHeight();
@@ -123,10 +159,20 @@ public sealed partial class MainWindow : WindowEx
 
     public static string MicTip(string status, string muteHint) => $"{status}\n{muteHint}";
 
-    /// <summary>"[Teams 04:12] text" — minutes:seconds since capture started.</summary>
-    public static string Stamped(SourceHint source, TimeSpan at, string text) => $"[{source} {at:mm\\:ss}] {text}";
+    /// <summary>Minutes:seconds since capture started.</summary>
+    public static string Stamp(TimeSpan at) => $"{at:mm\\:ss}";
 
-    public static string Line(TranscriptLine? line) => line is null ? "Nothing heard yet." : Stamped(line.Source, line.At, line.Text);
+    /// <summary>"You:" for the microphone, "Them:" for the call audio.</summary>
+    public static string Said(SourceHint source) => $"{source.Speaker()}:";
+
+    public static string Heard(TranscriptLine? line) => line?.Text ?? "Nothing heard yet.";
+
+    /// <summary>Your lines in the accent colour, the call's in the ordinary text colour, so a glance tells them apart.</summary>
+    public static Brush SpeakerBrush(SourceHint source) =>
+        (Brush)Application.Current.Resources[source == SourceHint.Mic ? "AccentTextFillColorPrimaryBrush" : "TextFillColorPrimaryBrush"];
+
+    public static string RecapTip(string? hotkey) =>
+        "Write a recap of this call: summary, decisions, action items, fact checks" + (hotkey is null ? "" : $" ({hotkey})");
 
     private void Pill_Tapped(object sender, TappedRoutedEventArgs e)
     {
@@ -182,7 +228,7 @@ public sealed partial class MainWindow : WindowEx
     {
         var now = DateTimeOffset.Now;
         var root = @"C:\src\EnterprisePMIS";
-        ViewModel.Apply(new Core.Config.Settings { RepoPath = root });
+        ViewModel.Apply(new Core.Config.Settings { RepoPath = root, AudioInput = Core.Config.AudioInput.Both });   // call audio on: cards say who spoke
         ViewModel.AddTranscript(new TranscriptLine(SourceHint.Teams, TimeSpan.FromSeconds(252), "Does the inspection table have a tenant ID foreign key?"));
         ViewModel.AddTranscript(new TranscriptLine(SourceHint.Mic, TimeSpan.FromSeconds(255), "Python was created by Dennis Ritchie."));
         ViewModel.Push([new Core.Providers.Insight(Core.Routing.Intent.Pipeline, "[AZDO] PR Validation", "feature/pmis-sync: ✅ Succeeded (8m) · run #20261001.3", [], 0.9,
@@ -196,9 +242,88 @@ public sealed partial class MainWindow : WindowEx
         ViewModel.Push([new Core.Providers.Insight(Core.Routing.Intent.FactCheck, "[FACT] The Eiffel Tower was completed in 1889", "✅ Supported — Completed in March 1889 for the Exposition Universelle.",
             [], 0.9, Link: new Uri("https://en.wikipedia.org/wiki/Eiffel_Tower"), Verdict: Core.Providers.Verdict.Supported)], now.AddSeconds(-5), SourceHint.Teams);   // said twice: one line, counted
         ViewModel.Push([new Core.Providers.Insight(Core.Routing.Intent.FactCheck, "[FACT] Python was created by Dennis Ritchie", "❌ Contradicted — Python was created by Guido van Rossum; Dennis Ritchie created C.",
-            [], 0.9, Link: new Uri("https://en.wikipedia.org/wiki/Python_(programming_language)"), Verdict: Core.Providers.Verdict.Contradicted)], now);
+            [], 0.9, Link: new Uri("https://en.wikipedia.org/wiki/Python_(programming_language)"), Verdict: Core.Providers.Verdict.Contradicted, LinkChecked: true)], now);
+        ViewModel.Focus?.RateUpCommand.Execute(null);   // the demo has no session log: the rating only shows on the card
+        ViewModel.SetRatings(24, 2);
         ViewModel.MicLevel = 0.5;   // an ordinary speaking voice, so the meter is visible in the sample
         ViewModel.IsPinned = true;
+    }
+
+    /// <summary>
+    /// Plays one effect and holds a frame of it, for screenshots: --demo --fx contradicted|supported|unverified|checking|
+    /// voice|muted|shatter|milestone|constellation|materialize. Composition motion (springs, the answer sharpening) runs
+    /// to its end, except in "materialize", which slows it down.
+    /// </summary>
+    public void Preview(string moment)
+    {
+        static Core.Providers.Insight Claim(string claim, string answer, Core.Providers.Verdict verdict, double confidence = 0.9) =>
+            new(Core.Routing.Intent.FactCheck, $"[FACT] {claim}", answer, [], confidence,
+                Link: new Uri($"https://en.wikipedia.org/wiki/{Uri.EscapeDataString(claim.Split(' ')[1])}"), Verdict: verdict, LinkChecked: true);
+        var now = DateTimeOffset.Now;
+        switch (moment)
+        {
+            case "contradicted":
+                ViewModel.Push([Claim("The Great Wall is visible from space", "❌ Contradicted — It is far too narrow to see with the naked eye from orbit.",
+                    Core.Providers.Verdict.Contradicted)], now);
+                Effects.FastForward(0.13, hold: true);
+                break;
+            case "supported":
+                ViewModel.Push([Claim("Water boils at 100 °C at sea level", "✅ Supported — At standard atmospheric pressure (101.325 kPa), water boils at 100 °C.",
+                    Core.Providers.Verdict.Supported, 0.95)], now, SourceHint.Teams);
+                Effects.FastForward(0.42, hold: true);
+                break;
+            case "materialize":
+                // composition time slowed to 8 %, so a capture a few seconds later lands mid-way through the answer sharpening
+                Microsoft.UI.Xaml.Media.CompositionTarget.GetCompositorForCurrentThread().GlobalPlaybackRate = 0.08f;
+                ViewModel.Push([Claim("Light from the Sun takes about eight minutes to reach Earth",
+                    "✅ Supported — Sunlight takes about 8 minutes 20 seconds to cover the 150 million km.", Core.Providers.Verdict.Supported, 0.95)], now);
+                Effects.FastForward(0.8, hold: true);
+                break;
+            case "unverified":
+                ViewModel.Push([Claim("Octopuses dream in colour", "⚠️ Unverified — Octopuses change colour during sleep, but whether they dream is unknown.",
+                    Core.Providers.Verdict.Unverified, 0.5)], now);
+                Effects.FastForward(0.3, hold: true);
+                break;
+            case "checking":
+                ViewModel.IsChecking = true;
+                Effects.FastForward(1.15, hold: true);
+                break;
+            case "voice":
+                ViewModel.MicLevel = 0.62;
+                Effects.FastForward(0.8, hold: true);
+                break;
+            case "muted":
+                ViewModel.ToggleMuteCommand.Execute(null);
+                Effects.FastForward(1.0, hold: true);
+                break;
+            case "shatter":
+                ViewModel.ToggleMuteCommand.Execute(null);
+                Effects.FastForward(1.0, hold: false);
+                ViewModel.ToggleMuteCommand.Execute(null);
+                Effects.FastForward(0.2, hold: true);
+                break;
+            case "milestone":
+                ViewModel.SetRatings(30, 2);
+                Effects.FastForward(0.3, hold: true);
+                break;
+            case "constellation":
+                (string, string, Core.Providers.Verdict)[] session =
+                [
+                    ("Python was released in 1991", "✅ Supported — Python 0.9.0 was released in February 1991.", Core.Providers.Verdict.Supported),
+                    ("Python is named after a snake", "❌ Contradicted — It is named after Monty Python's Flying Circus.", Core.Providers.Verdict.Contradicted),
+                    ("Guido van Rossum created Python", "✅ Supported — He began work on it in 1989.", Core.Providers.Verdict.Supported),
+                    ("The Eiffel Tower is 330 metres tall", "✅ Supported — 330 m including antennas.", Core.Providers.Verdict.Supported),
+                    ("The Eiffel Tower was built for the 1900 fair", "❌ Contradicted — It was built for the 1889 Exposition Universelle.", Core.Providers.Verdict.Contradicted),
+                    ("Gustave Eiffel designed the Statue of Liberty frame", "✅ Supported — His company built its internal structure.", Core.Providers.Verdict.Supported),
+                    ("Rust guarantees memory safety without garbage collection", "✅ Supported — Through ownership and borrowing.", Core.Providers.Verdict.Supported),
+                    ("Rust was created at Google", "❌ Contradicted — It began as a Mozilla Research project.", Core.Providers.Verdict.Contradicted),
+                    ("The tenant table has a soft delete column", "⚠️ Unverified — No such column in the schema snapshot.", Core.Providers.Verdict.Unverified),
+                    ("Mozilla funded Rust development", "✅ Supported — Mozilla sponsored it from 2009.", Core.Providers.Verdict.Supported),
+                ];
+                foreach (var (claim, answer, verdict) in session) ViewModel.Push([Claim(claim, answer, verdict, verdict == Core.Providers.Verdict.Unverified ? 0.5 : 0.92)], now);
+                ViewModel.IsConstellationOpen = true;
+                break;
+        }
     }
 #endif
 }

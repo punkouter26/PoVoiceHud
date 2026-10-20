@@ -66,6 +66,29 @@
                 </Grid>
             </StackPanel>
 
+            <!-- 3. Two switches, then the bug-report helper -->
+            <StackPanel>
+                <CheckBox Content="Look claims up on Wikipedia" IsChecked="{x:Bind ViewModel.LookUpClaims, Mode=TwoWay}" />
+                <TextBlock Text="{x:Bind ViewModel.LookUpNote, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap" Margin="28,0,0,4" />
+                <CheckBox Content="Start with Windows" IsChecked="{x:Bind ViewModel.StartWithWindows, Mode=TwoWay}" />
+                <CheckBox Content="Sounds for verdicts and mute" IsChecked="{x:Bind ViewModel.Sounds, Mode=TwoWay}"
+                          ToolTipService.ToolTip="Short cues, each under a quarter of a second, so call audio capture never transcribes them" />
+            </StackPanel>
+            <ComboBox Header="Effects" ItemsSource="{x:Bind ViewModel.EffectsLevels}" SelectedItem="{x:Bind ViewModel.Effects, Mode=TwoWay}"
+                      HorizontalAlignment="Stretch"
+                      ToolTipService.ToolTip="Full: glass, shockwaves, particles, frost. Subtle: the same moments, calmer and without particles. Off: no motion." />
+            <TextBlock Text="Windows' animation switch and battery saver turn the effects down further." Style="{StaticResource HudCaption}"
+                       TextWrapping="Wrap" Margin="0,-6,0,0" />
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button Content="Copy diagnostics" Command="{x:Bind ViewModel.CollectDiagnosticsCommand}"
+                        ToolTipService.ToolTip="Zip the logs and settings for a bug report. Transcripts and keys are never included." />
+                <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.DiagnosticsResult, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </Grid>
+
             <TextBlock Style="{StaticResource HudCaption}" TextWrapping="Wrap"
                        Text="Without a repository the app fact-checks what you say. With one it also listens to the call and answers from the code. Changes apply when you close this panel." />
         </StackPanel>

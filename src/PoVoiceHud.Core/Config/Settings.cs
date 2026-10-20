@@ -6,6 +6,9 @@ public enum HudMode { Simple, Repo }
 
 public enum AudioInput { Mic, Remote, Both }
 
+/// <summary>How much the HUD moves and glows. Windows' "Animation effects" switch and battery saver can lower it further.</summary>
+public enum EffectsLevel { Off, Subtle, Full }
+
 public sealed record Settings
 {
     /// <summary>Repo mode does everything Simple mode does (fact check) and adds the repository sources.</summary>
@@ -26,6 +29,20 @@ public sealed record Settings
     public string? FoundryEndpoint { get; init; }
     public string FoundryModel { get; init; } = "Llama-3.3-70B-Instruct";
     public int AutoExpandSeconds { get; init; } = 20;
+    /// <summary>Looks each claim up on Wikipedia before the model judges it, so the verdict can cite a real article.</summary>
+    public bool LookUpClaims { get; init; } = true;
+    public bool StartWithWindows { get; init; }
+    /// <summary>Shaders, springs and particles; see <see cref="EffectsLevel"/>.</summary>
+    public EffectsLevel Effects { get; init; } = EffectsLevel.Full;
+    /// <summary>Short synthesized cues for verdicts, mute and ratings, each under the 300 ms the segmenter ignores.</summary>
+    public bool Sounds { get; init; } = true;
+    /// <summary>
+    /// Comma-separated words Whisper should expect (names, product terms), on top of the ones read from the repository.
+    /// A string rather than a list so that settings compare by value.
+    /// </summary>
+    public string? Vocabulary { get; init; }
+    /// <summary>Where new versions are published: an https URL or a folder that holds Velopack releases. Empty: no update check.</summary>
+    public string? UpdateFeed { get; init; }
 
     /// <summary>Mode presets (SPEC §1a); individual toggles can be changed afterwards.</summary>
     public Settings ApplyMode(HudMode mode) => mode switch

@@ -7,13 +7,24 @@
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <!-- LibraryImport (RegisterHotKey) generates unsafe stubs. -->
+    <!-- LibraryImport (RegisterHotKey, the tray icon) generates unsafe stubs. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Program.cs owns Main so that Velopack's install/update hooks run before any window exists. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <!-- The installer's version: build/pack.ps1 reads it from here. -->
+    <Version>1.1.0</Version>
+    <ApplicationIcon>Assets\PoVoiceHud.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Assets\PoVoiceHud.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="WinUIEx" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" />
+    <PackageReference Include="Velopack" />
+    <PackageReference Include="Microsoft.Graphics.Win2D" />
+    <PackageReference Include="ComputeSharp.D2D1.WinUI" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PoVoiceHud.Core\PoVoiceHud.Core.csproj" />

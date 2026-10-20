@@ -18,7 +18,38 @@ PoVoiceHud has two modes, switchable in Settings and persisted:
 
 Every source is an individual on/off toggle: **Git history**, **Schema**, **Docs/ADR**, **Azure DevOps**, **Fact check**, plus the audio input selector (`Mic` / `Remote` / `Both`). Simple mode = `Mic` + Fact check on, everything else off; Repo mode = `Both` + the four repo sources on, Fact check off. Toggles can be mixed freely after choosing a mode. The Settings flyout shows only the fact-check model at the top; everything repo-related sits under a collapsed **Advanced** section.
 
-**FactCheck provider:** each statement goes to an LLM — the user's **Azure AI Foundry** project (serverless chat-completions endpoint, model configurable, default `Llama-3.3-70B-Instruct`) or a local Ollama model — which returns a JSON verdict `{verdict: supported|contradicted|unverified|not_a_claim, reason, source}` from its own knowledge. The card shows `✅ Supported` / `❌ Contradicted` / `⚠️ Unverified` + one-sentence reason (+ a link when the model names an http(s) source); `not_a_claim` (commands, chatter, questions, fragments) produces no card. Without an endpoint, the card says `⚠️ Unverified (no LLM configured)`. **Web search was removed by decision on 2026-10-01** (no Brave/Google keys; no `[WEB]` answer cards). **Privacy:** in Simple mode only the spoken statement leaves the machine, to the user's own Azure tenant or localhost; audio never does. The Whisper model is fixed to `base.en`.
+**FactCheck provider:** each statement goes to an LLM — the user's **Azure AI Foundry** project (serverless chat-completions endpoint, model configurable, default `Llama-3.3-70B-Instruct`) or a local Ollama model — which returns a JSON verdict `{verdict: supported|contradicted|unverified|not_a_claim, reason, source}` from its own knowledge. The card shows `✅ Supported` / `❌ Contradicted` / `⚠️ Unverified` + one-sentence reason (+ a link when the model names an http(s) source); `not_a_claim` (commands, chatter, questions, fragments) produces no card. Without an endpoint, the card says `⚠️ Unverified (no LLM configured)`. **Web search was removed by decision on 2026-10-01** (no Brave/Google keys; no `[WEB]` answer cards). **Keyless Wikipedia evidence was added back on 2026-10-19** (§1b, ADR-0004). **Privacy:** in Simple mode only the spoken statement leaves the machine, to the user's own Azure tenant or localhost; audio never does. The Whisper model is fixed to `base.en`.
+
+## 1b. Change request (2026-10-19): production and engagement features
+
+The owner chose F2, F3, F4, F6, F7, F8 and the first step of F9 from a list of ten proposals:
+
+| | Feature | Where |
+|---|---|---|
+| F2 | Whisper is prompted with a glossary of at most 120 characters: `Settings.Vocabulary`, then the repository's entity names and recurring file-name words (`SymbolIndex.Vocabulary`), refreshed when the workspace changes. On the fixture it turns "tenant ID" into "TenantId", for ~80–100 ms more per sentence (`docs/perf.md`). | `WhisperTranscriber.Prompt`, `ServiceCollectionExtensions` |
+| F3 | A rolling file log (`logs\{date}.log`, Information+, 14 days) and **Copy diagnostics** (a zip of logs, crash.log, settings.json and a machine description; never transcripts or secrets) | `Core/Diagnostics` |
+| F4 | A Velopack installer (`build/pack.ps1`), silent background updates from `Settings.UpdateFeed` that install on exit, a tray icon and menu, and *Start with Windows* (HKCU Run key) | `App/Program.cs`, `App/Updates.cs`, `App/Interop/Autostart.cs` |
+| F6 | 👍/👎 and dismiss on each card. Ratings go into the session log, and the tally tooltip shows the last 7 days. | `InsightCardViewModel`, `SessionLog.Ratings` |
+| F7 | **Recap** (button, Ctrl+Alt+S, tray) writes a Markdown recap of the current conversation (since a 20-minute pause or the last recap): a model-written summary, then the fact checks, answers and transcript as logged. Muting after a conversation suggests one. | `Core/Sessions/RecapWriter`, `SessionLog.Conversation` |
+| F8 | Claims are looked up on English Wikipedia before the model judges them; a source among the fetched articles is marked `(looked up)`. Switch: `Settings.LookUpClaims`. | `WikipediaEvidence`, ADR-0004 |
+| F9 (step 1) | The transcript says `You:` (mic) or `Them:` (call). Cards carry the same badge when call audio is on. Real speaker diarization is still out of scope. | `SourceHintExtensions.Speaker` |
+
+## 1c. Change request (2026-10-20): graphics and sound (G1–G10, all chosen)
+
+| | Effect | When | Where |
+|---|---|---|---|
+| G1 | Domain-warped aurora under the acrylic, faster with the voice, tinted by the last verdict | always (Full animates, Subtle is still) | `GlassShader` |
+| G2 | Voice ribbon (three glowing strands) instead of the meter bars; accent colour for you, amber for the call | while sound is heard | `GlassShader` |
+| G3 | Shockwave from the verdict emoji: soft ring and light sweep (supported), RGB-split ring, scanline tear and headline jolt (contradicted), amber shimmer (unverified) | a card arrives | `OverlayShader`, `Motion.Glitch` |
+| G4 | Two comets round the pill's outline, turning amber after 2 s | while a sentence is checked | `OverlayShader` |
+| G5 | Spring entrance for the card, springy history list, springy window height, swipe to dismiss | cards and panel | `Motion`, `Core/Fx/Spring` |
+| G6 | Evidence sparks that gather on the source link; bursts for 👍/👎 and for every tenth 👍 in a week | supported with a link, ratings | `Core/Fx/ParticleSystem` |
+| G7 | FM-synthesized cues, ≤ 240 ms, panned You left / Them right | verdicts, mute, ratings, milestones | `Core/Audio/SoundPalette` |
+| G8 | The answer sharpens from left to right (masked backdrop blur); confident answers get a glint | a card arrives | `Motion.Materialize` |
+| G9 | Voronoi frost grows in from the rim; on unmute it shatters into spinning shards | mute / unmute | `FrostShader`, `Core/Fx/ShardField` |
+| G10 | Session constellation: force-directed stars on a shader sky | ✦ button, after a recap | `Views/ConstellationView`, `Core/Fx/Constellation` |
+
+Settings: `Effects` (`Full` default, `Subtle`, `Off`) and `Sounds` (on). Design and costs: ADR-0005.
 
 ## 2. User journeys
 
@@ -49,7 +80,10 @@ Every source is an individual on/off toggle: **Git history**, **Schema**, **Docs
 | CI | Azure DevOps Build REST API 7.1 (`_apis/build/builds`, `…/timeline`), PAT over Basic auth, plain `HttpClient` — no SDK | api-version pinned in `AzdoBuildClient` |
 | Fact-check LLM | Azure AI Foundry serverless chat completions (OpenAI-compatible `POST {endpoint}/models/chat/completions`, `api-key` header, `response_format: json_schema` with a plain-text fallback when the deployment rejects it), plain `HttpClient` — no SDK | api-version pinned in `FoundryClient` |
 | MVVM | `CommunityToolkit.Mvvm` | 8.4.2 |
-| Windowing | `WinUIEx` | 2.9.3 |
+| Windowing | `WinUIEx` (also the tray icon) | 2.9.3 |
+| Effects | `Microsoft.Graphics.Win2D` (drawing, swap chain) · `ComputeSharp.D2D1.WinUI` (HLSL pixel shaders written in C#), App only | 1.4.0 · 3.2.0 |
+| Installer and updates | `Velopack` + the `vpk` local tool (`.config/dotnet-tools.json`) | 1.2.161 |
+| Fact-check evidence | English Wikipedia search API (`/w/api.php`), plain `HttpClient`, no key | — |
 | Helpers | `Humanizer.Core` 3.0.10 · `Raffinert.FuzzySharp` 2.0.3 · `Polly.Core` 8.7.0 · `Microsoft.Extensions.DependencyInjection` / `.Logging` / `.Logging.Debug` 10.0.x | — |
 | Tests | `xunit.v3` 4.0.1 (Microsoft.Testing.Platform runner) · `Microsoft.Testing.Extensions.CodeCoverage` 18.11.2 · `Verify.XunitV3` 31.25.0 | pinned in `Directory.Packages.props` |
 
@@ -140,11 +174,11 @@ Coverage target: **≥80 % line coverage on `PoVoiceHud.Core`**, measured with `
 
 **Ask first:** adding a NuGet package not in §3 · any new outbound HTTP endpoint · changing latency/memory budgets · deleting fixtures · touching Credential Manager entries other than `PoVoiceHud/*`.
 
-**Never:** commit secrets or model binaries · send audio to any network service, or transcript text anywhere but the fact-check endpoint the user configured · weaken or skip failing tests · add Blazor/Radzen/LLM dependencies.
+**Never:** commit secrets or model binaries · send audio to any network service, or transcript text anywhere but the fact-check endpoint the user configured (recaps included) and, while *Look claims up on Wikipedia* is on, a claim's content words to Wikipedia's search · weaken or skip failing tests · add Blazor/Radzen/LLM dependencies.
 
 ## 9. Out of scope (v1)
 
-Speaker diarization · non-English models · multi-repo · MSIX/Store · GitHub Actions/GitLab providers · LLM-generated answers for repo intents (the LLM is used only for fact-check verdicts) · transcript persistence · VS Code extension · tray icon · auto-update.
+Speaker diarization (the You/Them labels come from which device heard it) · non-English models · multi-repo · MSIX/Store · GitHub Actions/GitLab providers · VS Code extension.
 
 ## 10. Edge cases & error states
 
@@ -162,6 +196,10 @@ Speaker diarization · non-English models · multi-repo · MSIX/Store · GitHub 
 | AzDO 401/403 | Card "AzDO auth failed — check PAT"; retry after 60 s |
 | AzDO no runs for branch | Card "No runs for `<branch>`" |
 | Fact-check model slow or down | No reply within 8 s (30 s for a local model) or 5xx after retries → `⚠️ Unverified` card naming the cause |
+| Wikipedia slow, down or no article found | After 2.5 s or on any failure the lookup returns nothing; the model judges alone and its link stays "cited by the model" |
+| Recap with no model, or the model fails | The recap is still written: a note in place of the summary, then the fact checks, answers and transcript |
+| Update feed unreachable, or the copy was not installed by Setup.exe | No update; logged as a warning. **Check for updates** in the tray says why. |
+| Disk full or log file locked | Session log and file log writes are skipped silently; the call is never interrupted |
 | Hotkey already registered by another app | The next combination in the list is tried; the mic tooltip says which one is live, and mute via click still works |
 | VS Code not installed | `LaunchUriAsync` returns false → toast "VS Code not found" |
 | Two insights for one utterance | Highest-confidence in Zone 1, rest pushed to Zone 2 shelf (max 6, FIFO) |

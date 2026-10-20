@@ -2,23 +2,30 @@
     x:Class="PoVoiceHud.App.Views.InsightCard"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:vm="using:PoVoiceHud.Core.ViewModels">
+    xmlns:vm="using:PoVoiceHud.Core.ViewModels"
+    xmlns:local="using:PoVoiceHud.App.Views">
     <!-- The focus card. Its one-line summary is already in the pill above it, so the card holds only what
          the pill cannot: the answer, a stale warning, and where to go next. -->
-    <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1" CornerRadius="6" Padding="14,10">
+    <!-- Swipe the card sideways to put it away (G5): far or fast enough and it is thrown off, otherwise it springs back. -->
+    <Border x:Name="Body" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1" CornerRadius="6" Padding="14,10"
+            ManipulationMode="TranslateX,TranslateInertia" ManipulationDelta="Body_ManipulationDelta" ManipulationCompleted="Body_ManipulationCompleted">
         <StackPanel Spacing="6">
-            <TextBlock Text="{x:Bind Card.Answer, Mode=OneWay}" Style="{StaticResource HudAnswer}" FontSize="15" MaxLines="4"
+            <TextBlock x:Name="AnswerText" Text="{x:Bind Card.Answer, Mode=OneWay}" Style="{StaticResource HudAnswer}" FontSize="15" MaxLines="4"
                        ToolTipService.ToolTip="{x:Bind Card.Answer, Mode=OneWay}" />
             <TextBlock Text="{x:Bind Card.Stale, Mode=OneWay}" Visibility="{x:Bind Card.IsStale, Mode=OneWay}"
                        Style="{StaticResource HudCaption}" Foreground="{ThemeResource SystemFillColorCautionBrush}"
                        TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxLines="3"
                        ToolTipService.ToolTip="{x:Bind Card.Stale, Mode=OneWay}" />
 
-            <!-- Footer: where to go next (files, then the web link) and copy -->
-            <Grid ColumnSpacing="4">
+            <!-- Footer: where to go next (files, then the web link); who said it; was it right; copy; put it away -->
+            <Grid ColumnSpacing="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
@@ -32,14 +39,31 @@
                             </DataTemplate>
                         </ItemsRepeater.ItemTemplate>
                     </ItemsRepeater>
-                    <HyperlinkButton Command="{x:Bind Card.OpenLinkCommand, Mode=OneWay}" Visibility="{x:Bind Card.HasLink, Mode=OneWay}"
+                    <HyperlinkButton x:Name="LinkButton" Command="{x:Bind Card.OpenLinkCommand, Mode=OneWay}" Visibility="{x:Bind Card.HasLink, Mode=OneWay}"
                                      Style="{StaticResource HudLink}" HorizontalAlignment="Left">
                         <TextBlock Text="{x:Bind Card.LinkLabel, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                     </HyperlinkButton>
                 </StackPanel>
-                <Button Grid.Column="1" Style="{StaticResource HudIconButton}" VerticalAlignment="Bottom" Click="Copy_Click"
+                <Border Grid.Column="1" Visibility="{x:Bind Card.ShowSpeaker, Mode=OneWay}" VerticalAlignment="Center" Margin="0,0,6,0"
+                        Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="4" Padding="6,1"
+                        ToolTipService.ToolTip="{x:Bind local:InsightCard.SaidBy(Card.Speaker), Mode=OneWay}">
+                    <TextBlock Text="{x:Bind Card.Speaker, Mode=OneWay}" Style="{StaticResource HudCaption}" />
+                </Border>
+                <Button Grid.Column="2" Style="{StaticResource HudIconButton}" VerticalAlignment="Bottom" Command="{x:Bind Card.RateUpCommand, Mode=OneWay}"
+                        AutomationProperties.Name="Right — rate this card up" ToolTipService.ToolTip="Right (counts toward your weekly score)">
+                    <FontIcon Glyph="&#xE8E1;" FontSize="12" Foreground="{x:Bind local:InsightCard.Lit(Card.IsUp, x:True), Mode=OneWay}" />
+                </Button>
+                <Button Grid.Column="3" Style="{StaticResource HudIconButton}" VerticalAlignment="Bottom" Command="{x:Bind Card.RateDownCommand, Mode=OneWay}"
+                        AutomationProperties.Name="Wrong — rate this card down" ToolTipService.ToolTip="Wrong (counts toward your weekly score)">
+                    <FontIcon Glyph="&#xE8E0;" FontSize="12" Foreground="{x:Bind local:InsightCard.Lit(Card.IsDown, x:False), Mode=OneWay}" />
+                </Button>
+                <Button Grid.Column="4" Style="{StaticResource HudIconButton}" VerticalAlignment="Bottom" Click="Copy_Click"
                         AutomationProperties.Name="Copy this card" ToolTipService.ToolTip="Copy this card">
                     <FontIcon Glyph="&#xE8C8;" FontSize="12" />
+                </Button>
+                <Button Grid.Column="5" Style="{StaticResource HudIconButton}" VerticalAlignment="Bottom" Command="{x:Bind Card.DismissCommand, Mode=OneWay}"
+                        AutomationProperties.Name="Put this card away" ToolTipService.ToolTip="Put this card away">
+                    <FontIcon Glyph="&#xE711;" FontSize="11" />
                 </Button>
             </Grid>
         </StackPanel>

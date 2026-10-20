@@ -13,6 +13,7 @@ using PoVoiceHud.Core.Providers.Git;
 using PoVoiceHud.Core.Providers.Pipeline;
 using PoVoiceHud.Core.Providers.Schema;
 using PoVoiceHud.Core.Routing;
+using PoVoiceHud.Core.Sessions;
 using PoVoiceHud.Core.Vad;
 using PoVoiceHud.Core.Workspace;
 
@@ -20,6 +21,7 @@ namespace PoVoiceHud.Core;
 
 public static class ServiceCollectionExtensions
 {
+
     /// <summary>
     /// Everything below the UI. Register IAudioSource/ITranscriber/HttpClient first to substitute your own.
     /// <c>settings.RepoPath</c> must already be a local folder here (see <see cref="RepoSource.EnsureLocal"/>).
@@ -33,7 +35,17 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<IAudioSource>(_ => new WasapiDualCapture(settings.AudioInput));
         services.TryAddSingleton(_ => new SileroVad(models.Silero));
-        services.TryAddSingleton<ITranscriber>(_ => new WhisperTranscriber(models.Whisper, settings.WhisperThreads));
+        services.TryAddSingleton<ITranscriber>(sp =>
+        {
+            // Whisper is told the words it should expect: the ones typed in settings, then the repository's own names,
+            // as many as fit in PromptFor's short budget.
+            var workspace = sp.GetService<Workspace.Workspace>();
+            string? Prompt() => WhisperTranscriber.PromptFor((settings.Vocabulary ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Concat(workspace?.Index.Vocabulary() ?? []).Distinct(StringComparer.OrdinalIgnoreCase));
+            var whisper = new WhisperTranscriber(models.Whisper, settings.WhisperThreads, Prompt());
+            if (workspace is not null) workspace.Changed += () => whisper.Prompt = Prompt();
+            return whisper;
+        });
 
         static Func<string?> RepoRoot(IServiceProvider sp) => () => sp.GetService<Workspace.Workspace>()?.Root;
         services.AddSingleton<IInsightProvider>(sp => new GitProvider(RepoRoot(sp)));
@@ -59,9 +71,13 @@ public static class ServiceCollectionExtensions
         var gated = endpoint is { IsLoopback: false } && ollamaModel is not null;
         services.AddSingleton<IInsightProvider>(sp => new FactCheckProvider(
             Main(sp, FoundryClient.VerdictFormat),
-            gated ? new FoundryClient(sp.GetRequiredService<HttpClient>(), FoundryClient.OllamaEndpoint, ollamaModel!, apiKey: null, FoundryClient.VerdictFormat) : null));
+            gated ? new FoundryClient(sp.GetRequiredService<HttpClient>(), FoundryClient.OllamaEndpoint, ollamaModel!, apiKey: null, FoundryClient.VerdictFormat) : null,
+            settings.LookUpClaims ? new WikipediaEvidence(sp.GetRequiredService<HttpClient>()) : null));
         // Code research answers in plain sentences, so its client asks for no response schema.
         services.AddSingleton<IInsightProvider>(sp => new CodeProvider(RepoRoot(sp), Main(sp, format: null)));
+        // A recap is a page, not a sentence: more tokens, and time for a local model to write them.
+        services.AddSingleton(sp => new RecapWriter(endpoint is null ? null
+            : new FoundryClient(sp.GetRequiredService<HttpClient>(), endpoint, settings.FoundryModel, foundryKey, maxTokens: 1200, timeout: TimeSpan.FromSeconds(120))));
 
         services.AddSingleton(sp => new Router(
             sp.GetServices<IInsightProvider>(), () => sp.GetService<Workspace.Workspace>()?.Index, () => settings.EnabledSources,

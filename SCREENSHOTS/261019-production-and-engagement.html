@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoVoiceHud — ratings, recap, You/Them, Wikipedia, tray (2026-10-19)</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1b1b1f; --soft: #5c5f66; --line: #d9dbe0; --bg: #f6f7f9; --card: #ffffff; --mark: #c81e2d; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ececf1; --soft: #a3a7b0; --line: #34363c; --bg: #17181b; --card: #212327; } }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 32px 0 12px; }
+  h3 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--soft); }
+  p.lead { color: var(--soft); margin: 0 0 20px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  .shot { position: relative; }
+  .shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; background: var(--mark); color: #fff;
+         font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+  ol.notes { list-style: none; margin: 12px 0 0; padding: 0; counter-reset: n; }
+  ol.notes li { counter-increment: n; position: relative; padding-left: 34px; margin: 0 0 10px; }
+  ol.notes li::before { content: counter(n); position: absolute; left: 0; top: 1px; width: 22px; height: 22px; border-radius: 50%;
+                        background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; }
+  .icon { display: flex; gap: 16px; align-items: center; }
+  .icon img { width: 64px; height: 64px; }
+  code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ratings, recap, You/Them, Wikipedia sources, tray</h1>
+  <p class="lead">Debug build with <code>--demo</code> (sample cards, no audio), captured with <code>PrintWindow</code>. "Before" is commit 5ec6071; "after" is the working tree on 2026-10-19.
+    The demo now runs with call audio on, so the speaker badge appears. Its focus card has a looked-up source and a 👍.</p>
+
+  <h2>The HUD</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before</h3>
+      <div class="shot"><img src="261019-hud-before.png" alt="HUD before: focus card with a model-cited link and a copy button; transcript line marked [Mic 04:15]"></div>
+    </section>
+    <section class="side">
+      <h3>After</h3>
+      <div class="shot">
+        <img src="261019-hud-after.png" alt="HUD after: looked-up link, You badge, thumbs up and down, copy, dismiss; transcript line with a coloured You:; Recap button">
+        <span class="pin" style="left:42%; top:41%">1</span>
+        <span class="pin" style="left:66%; top:33%">2</span>
+        <span class="pin" style="left:76%; top:33%">3</span>
+        <span class="pin" style="left:92%; top:33%">4</span>
+        <span class="pin" style="left:3%; top:85%">5</span>
+        <span class="pin" style="left:90%; top:80%">6</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes">
+    <li><b>Looked-up source.</b> The claim was searched on Wikipedia and the model cited one of the fetched articles, so the link says <code>(looked up)</code>. A URL the model wrote itself still says <code>(cited by the model)</code>.</li>
+    <li><b>Who said it.</b> With call audio on, each card carries a <code>You</code> or <code>Them</code> badge. In Simple mode (microphone only) there is no badge.</li>
+    <li><b>👍 / 👎.</b> Was the card right? The chosen one turns green or red, and pressing it again clears it. Ratings go into the session log, and the tally's tooltip shows the last 7 days (<i>👍 24 👎 2 (92% right)</i>).</li>
+    <li><b>Put away.</b> ✕ dismisses the card; the newest line in the history becomes the main card. Copy is unchanged.</li>
+    <li><b>You / Them in the transcript.</b> <code>[Mic 04:15]</code> became <code>04:15 You:</code>, with your lines in the accent colour and the call's in the normal text colour.</li>
+    <li><b>Recap.</b> Writes a Markdown recap of the current conversation (summary, decisions, action items, open questions, then the fact checks and transcript), copies it, and shows a card that opens the file. Hotkey Ctrl+Alt+S.</li>
+  </ol>
+
+  <h2>Settings</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before</h3>
+      <div class="shot"><img src="261019-settings-before.png" alt="Settings before: model fields and repository"></div>
+    </section>
+    <section class="side">
+      <h3>After</h3>
+      <div class="shot">
+        <img src="261019-settings-after.png" alt="Settings after: plus Look claims up on Wikipedia, Start with Windows and Copy diagnostics">
+        <span class="pin" style="left:13%; top:69%">7</span>
+        <span class="pin" style="left:13%; top:79%">8</span>
+        <span class="pin" style="left:13%; top:86%">9</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes" style="counter-reset: n 6">
+    <li><b>Look claims up on Wikipedia</b> (on by default). The line under it changes with the box, to say what leaves the PC.</li>
+    <li><b>Start with Windows</b> writes or removes the <code>HKCU\…\Run</code> entry. The tray menu has the same switch.</li>
+    <li><b>Copy diagnostics</b> zips the last week of logs, <code>crash.log</code>, <code>settings.json</code> and a machine description into <code>%TEMP%</code>, puts the zip on the clipboard and shows it in Explorer. Transcripts and keys are never included.</li>
+  </ol>
+
+  <h2>New app icon</h2>
+  <section class="side icon">
+    <img src="261019-icon.png" alt="App icon: a white microphone on a blue-to-violet rounded tile">
+    <p>Used for the exe, the window, the tray and Setup.exe. Before this change the app had no icon of its own. The tray menu (Hide/Show, Mute, Recap this call, Open the sessions folder, Start with Windows, Check for updates, Quit) only opens on a real right-click, and these screenshots are taken without sending any input, so it is not shown here.</p>
+  </section>
+</main>
+</body>
+</html>

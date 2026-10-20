@@ -21,7 +21,10 @@ public static class VerdictExtensions
     };
 }
 
-/// <summary>One HUD card: Headline → one-sentence Answer → Jump buttons. Confidence orders cards; Stale carries the ⚠ text.</summary>
+/// <summary>
+/// One HUD card: Headline → one-sentence Answer → Jump buttons. Confidence orders cards; Stale carries the ⚠ text.
+/// LinkChecked means Link is a page the app fetched itself (a Wikipedia article), not a URL the model wrote.
+/// </summary>
 public sealed record Insight(
     Intent Intent,
     string Headline,
@@ -30,7 +33,8 @@ public sealed record Insight(
     double Confidence = 1,
     string? Stale = null,
     Uri? Link = null,
-    Verdict? Verdict = null);
+    Verdict? Verdict = null,
+    bool LinkChecked = false);
 
 /// <summary>Context is the sentences heard just before (to resolve "it"/"they"); Fresh bypasses provider caches.</summary>
 public sealed record Query(string Text, IReadOnlyList<SymbolMatch> Symbols, Intent Intents, IReadOnlyList<string>? Context = null, bool Fresh = false);

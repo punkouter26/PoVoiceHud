@@ -14,6 +14,32 @@ Fixture `tests/PoVoiceHud.Core.Tests/Fixtures/tenant-question.wav` (3.87 s, Wind
 
 Bench grid (scratch script, 3 timed runs, median): base.en ctx 1500 → 995 ms @8 thr / 732 @16; ctx 512 → 300 / 235; tiny.en ctx 512 → 167 / 127 (wrong text). Output text identical for base.en at every setting: "Does the inspection table have a tenant ID foreign key?"
 
+### Whisper glossary prompt (2026-10-19)
+
+Same fixture, base.en, 8 threads, 7 alternating runs per prompt length, with the machine at ~50 % load from other apps (so the no-prompt figure is above the ~300 ms idle figure):
+
+| glossary (characters) | median | text |
+|---|---|---|
+| none | 494 ms | "…have a tenant ID foreign key?" |
+| 60 | 576 ms | "…have a **TenantId** foreign key?" |
+| 120 | 595 ms | "Does the Inspection Table have a TenantId…" (ordinary words start to be capitalised) |
+| 200 | 650 ms | same |
+
+A prompt has a fixed cost (~80 ms) and grows with length, and past ~120 characters it over-steers. `WhisperTranscriber.PromptFor` therefore keeps the glossary (settings `Vocabulary` first, then the repository's names) to 120 characters. With no repository and no `Vocabulary` there is no prompt and no cost, which is the case criterion 3 measures.
+
+## Effects (2026-10-20)
+
+Debug build, `--demo` (the demo holds a speaking-level meter, so the voice ribbon never stops), process CPU over 10 s after 5 s of settling. Same machine as above, other apps running.
+
+| state | CPU (share of one core) | working set |
+|---|---|---|
+| Effects *Off* | 2.0 % | 195 MB |
+| *Subtle*, voice moving (ribbon at 30 fps, aurora still) | 6.6 % | 213 MB |
+| *Full*, voice moving (ribbon and aurora at 30 fps) | 8.3 % | 213 MB |
+| *Full*, nothing moving (frost held, effects asleep) | 2.3 % | 211 MB |
+
+Two choices took *Full* with a moving voice from 26 % to 8 % of one core. The frame loop is a `DispatcherQueueTimer`, because `CompositionTarget.Rendering` keeps all of XAML at 60 Hz (26 % → 15 %). The back layer is a swap chain rather than a `CanvasControl`, which XAML has to re-render every frame (15 % → 8 %). The overlay is redrawn only during an effect. Win2D and the shaders add about 18 MB to the working set. GPU time was not measured: the shaders cover 560 × 44 pixels (the pill) and run for under a second per event.
+
 ## Criterion 4 — end-to-end ≤ 1 200 ms
 
 `HudPipelineTests.Replayed_question_yields_a_schema_card_within_1200ms` replays the fixture plus 1 s of silence through the real VAD → Whisper → router → `SchemaProvider` and asserts the `[SCHEMA] Inspection.TenantId` card arrives within 1 200 ms of `Start()`. Passes in every suite run (the measurement includes VAD over the whole 4.9 s of audio, not just the post-pause part).

@@ -92,6 +92,9 @@ public sealed class HudPipeline : IDisposable
     /// <summary>Latest frame loudness on a 0–1 scale (−60 dBFS → 0, 0 dBFS → 1); 0 while muted. For the mic meter.</summary>
     public float Level { get; private set; }
 
+    /// <summary>Who the latest frame most likely came from, for colouring the meter.</summary>
+    public SourceHint Speaker { get; private set; }
+
     public static float LevelOf(ReadOnlySpan<short> samples)
     {
         double sum = 0;
@@ -110,6 +113,7 @@ public sealed class HudPipeline : IDisposable
                 return;
             }
             Level = LevelOf(frame.Samples.Span);
+            Speaker = frame.Source;
             _segmenter.Push(frame, _vad.Process(frame.Samples.Span));
         }
     }

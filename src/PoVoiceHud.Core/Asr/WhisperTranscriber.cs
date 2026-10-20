@@ -8,6 +8,7 @@ namespace PoVoiceHud.Core.Asr;
 /// <summary>
 /// Whisper.net on the CPU runtime. The encoder cost is set by audio_ctx (50 per second, 1500 = 30 s), so
 /// utterances up to 10 s use a 512-context processor (~3x faster, same text on the fixture) and longer ones the full window.
+/// An optional prompt (a glossary of names) steers spelling; changing it rebuilds the processors before the next utterance.
 /// </summary>
 public sealed class WhisperTranscriber : ITranscriber
 {
@@ -15,17 +16,56 @@ public sealed class WhisperTranscriber : ITranscriber
     private const int ShortMaxSamples = ShortContext / 50 * Audio.PcmFrame.SampleRate;
 
     private readonly WhisperFactory _factory;
-    private readonly WhisperProcessor _short;
-    private readonly WhisperProcessor _long;
+    private readonly int _threads;
     private readonly SemaphoreSlim _one = new(1, 1);
+    private WhisperProcessor _short;
+    private WhisperProcessor _long;
+    private string? _builtWith;
+    private volatile string? _prompt;
 
     static WhisperTranscriber() => RuntimeOptions.RuntimeLibraryOrder = [RuntimeLibrary.Cpu];
 
-    public WhisperTranscriber(string modelPath, int threads)
+    public WhisperTranscriber(string modelPath, int threads, string? prompt = null)
     {
         _factory = WhisperFactory.FromPath(modelPath);
-        _short = _factory.CreateBuilder().WithLanguage("en").WithThreads(threads).WithAudioContextSize(ShortContext).Build();
-        _long = _factory.CreateBuilder().WithLanguage("en").WithThreads(threads).Build();
+        _threads = threads;
+        _prompt = _builtWith = prompt;
+        (_short, _long) = Build(prompt);
+    }
+
+    /// <summary>
+    /// "Glossary: Inspection, TenantId." from the first words that fit in <paramref name="maxChars"/>, or null when there are none.
+    /// Any prompt costs ~80 ms per utterance and every 100 more characters ~50 ms; beyond ~120 Whisper also starts
+    /// capitalising ordinary words ("Inspection Table"), so the default keeps it short (measured in docs/perf.md).
+    /// </summary>
+    public static string? PromptFor(IEnumerable<string> words, int maxChars = 120)
+    {
+        var kept = new List<string>();
+        var length = 0;
+        foreach (var word in words)
+        {
+            if (length + word.Length + 2 > maxChars) break;
+            kept.Add(word);
+            length += word.Length + 2;
+        }
+        return kept.Count == 0 ? null : $"Glossary: {string.Join(", ", kept)}.";
+    }
+
+    /// <summary>Takes effect from the next utterance; safe to set from any thread (the workspace watcher sets it).</summary>
+    public string? Prompt
+    {
+        get => _prompt;
+        set => _prompt = value;
+    }
+
+    private (WhisperProcessor Short, WhisperProcessor Long) Build(string? prompt)
+    {
+        WhisperProcessorBuilder Builder()
+        {
+            var builder = _factory.CreateBuilder().WithLanguage("en").WithThreads(_threads);
+            return prompt is null ? builder : builder.WithPrompt(prompt);
+        }
+        return (Builder().WithAudioContextSize(ShortContext).Build(), Builder().Build());
     }
 
     public async Task<string> TranscribeAsync(short[] pcm, CancellationToken ct)
@@ -33,6 +73,13 @@ public sealed class WhisperTranscriber : ITranscriber
         await _one.WaitAsync(ct);
         try
         {
+            if (_prompt is var prompt && prompt != _builtWith)
+            {
+                _short.Dispose();
+                _long.Dispose();
+                (_short, _long) = Build(prompt);
+                _builtWith = prompt;
+            }
             var processor = pcm.Length <= ShortMaxSamples ? _short : _long;
             var text = new StringBuilder();
             await foreach (var segment in processor.ProcessAsync(SampleConvert.ToFloat(pcm), ct))

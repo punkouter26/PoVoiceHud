@@ -10,9 +10,11 @@ namespace PoVoiceHud.Core.Providers.FactCheck;
 /// (https://&lt;resource&gt;.services.ai.azure.com → /models/chat/completions?api-version=… is appended, api-key header)
 /// or a full URL such as Ollama's http://localhost:11434/v1/chat/completions (used as-is).
 /// The key is never sent to a loopback endpoint, so a stored Azure key stays off the local wire.
-/// Each attempt has its own time limit and transient failures are retried.
+/// Each attempt has its own time limit and transient failures are retried. A verdict is short; a recap passes a larger
+/// <paramref name="maxTokens"/> and a longer <paramref name="timeout"/>.
 /// </summary>
-public sealed class FoundryClient(HttpClient http, Uri endpoint, string model, string? apiKey, object? responseFormat = null, ResiliencePipeline? retry = null) : ILanguageModel
+public sealed class FoundryClient(HttpClient http, Uri endpoint, string model, string? apiKey, object? responseFormat = null, ResiliencePipeline? retry = null,
+    int maxTokens = 300, TimeSpan? timeout = null) : ILanguageModel
 {
     private const string ApiVersion = "2024-05-01-preview";
 
@@ -46,7 +48,7 @@ public sealed class FoundryClient(HttpClient http, Uri endpoint, string model, s
     private bool _structured = responseFormat is not null;   // turned off the first time the deployment rejects response_format
 
     // A local model may still be loading into memory on its first call; a cloud endpoint has no such excuse.
-    private TimeSpan Timeout => TimeSpan.FromSeconds(endpoint.IsLoopback ? 30 : 8);
+    private TimeSpan Timeout => timeout ?? TimeSpan.FromSeconds(endpoint.IsLoopback ? 30 : 8);
 
     /// <summary>https anywhere, or http on localhost only (local Ollama).</summary>
     public static bool IsValidEndpoint(string? endpoint) =>
@@ -109,7 +111,7 @@ public sealed class FoundryClient(HttpClient http, Uri endpoint, string model, s
             ["model"] = model,
             ["messages"] = new object[] { new { role = "system", content = system }, new { role = "user", content = user } },
             ["temperature"] = 0,
-            ["max_tokens"] = 300,
+            ["max_tokens"] = maxTokens,
         };
         if (structured) body["response_format"] = responseFormat!;
 

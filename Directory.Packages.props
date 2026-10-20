@@ -4,6 +4,11 @@
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageVersion Include="WinUIEx" Version="2.9.3" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Effects: Win2D draws, ComputeSharp compiles the HLSL pixel shaders written in C# -->
+    <PackageVersion Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
+    <PackageVersion Include="ComputeSharp.D2D1.WinUI" Version="3.2.0" />
+    <!-- Installer and updates (unpackaged, so no MSIX) -->
+    <PackageVersion Include="Velopack" Version="1.2.161" />
     <!-- Audio / inference -->
     <PackageVersion Include="NAudio.Core" Version="2.3.0" />
     <PackageVersion Include="NAudio.Wasapi" Version="2.3.0" />

@@ -23,6 +23,15 @@ public class SymbolIndexTests
         var adr = Assert.Single(index.Symbols, s => s.Kind == SymbolKind.Adr);
         Assert.Equal("ADR-0004: Auth Lifecycle", adr.Name);
         Assert.Equal("docs/adr/0004-auth-lifecycle.md", adr.Path);
+
+        // Whisper's glossary: entities first, then the domain words in file names, without the ones every codebase has.
+        var words = index.Vocabulary().ToList();
+        Assert.Equal(["Inspection", "Tenant"], words.Take(2));
+        Assert.Contains("Invoice", words);
+        Assert.Contains("Middleware", words);
+        Assert.DoesNotContain("Service", words);
+        Assert.DoesNotContain("Context", words);
+        Assert.Equal(words.Count, words.Distinct(StringComparer.OrdinalIgnoreCase).Count());   // "Inspection" is an entity and a file: once
     }
 
     [Fact]

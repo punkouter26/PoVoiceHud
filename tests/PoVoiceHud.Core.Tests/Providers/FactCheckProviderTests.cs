@@ -152,28 +152,101 @@ public class FactCheckProviderTests
         Assert.Null(insight.Link);
     }
 
-    [Theory]
-    [InlineData("not_a_claim")]
-    [InlineData("NOT A CLAIM")]
-    public async Task Chatter_and_commands_the_model_flags_produce_no_card(string verdict)
+    [Fact]
+    public async Task Chatter_and_commands_the_model_flags_produce_no_card()
     {
-        var model = new FakeModel((system, _) =>
+        foreach (var verdict in new[] { "not_a_claim", "NOT A CLAIM" })
         {
-            Assert.Contains("not_a_claim", system);
-            return JsonSerializer.Serialize(new { verdict, reason = "This is an instruction, not a factual claim.", source = "" });
-        });
+            var model = new FakeModel((system, _) =>
+            {
+                Assert.Contains("not_a_claim", system);
+                return JsonSerializer.Serialize(new { verdict, reason = "This is an instruction, not a factual claim.", source = "" });
+            });
 
-        Assert.Null(await new FactCheckProvider(model).QueryAsync(new Query("No, don't open up", [], Intent.FactCheck), _ct));
+            Assert.Null(await new FactCheckProvider(model).QueryAsync(new Query("No, don't open up", [], Intent.FactCheck), _ct));
+        }
     }
 
     [Fact]
-    public async Task Without_an_llm_the_card_says_so()
+    public async Task Without_an_llm_or_when_it_fails_the_card_is_unverified_and_says_why()
     {
-        var insight = await new FactCheckProvider(model: null).QueryAsync(Statement, _ct);
+        var none = await new FactCheckProvider(model: null).QueryAsync(Statement, _ct);
+        Assert.NotNull(none);
+        Assert.StartsWith("⚠️ Unverified (no LLM configured)", none.Answer);
+        Assert.Null(none.Link);
 
-        Assert.NotNull(insight);
-        Assert.StartsWith("⚠️ Unverified (no LLM configured)", insight.Answer);
-        Assert.Null(insight.Link);
+        var down = new FakeModel((_, _) => throw new HttpRequestException("503", null, HttpStatusCode.ServiceUnavailable));
+        var failed = await new FactCheckProvider(down).QueryAsync(Statement, _ct);
+        Assert.NotNull(failed);
+        Assert.Equal("⚠️ Unverified — fact-check service unavailable (503).", failed.Answer);
+    }
+
+    private sealed class FakeEvidence(params Evidence[] passages) : IEvidenceSource
+    {
+        public List<string> Claims { get; } = [];
+        public Task<IReadOnlyList<Evidence>> FindAsync(string claim, CancellationToken ct)
+        {
+            Claims.Add(claim);
+            return Task.FromResult<IReadOnlyList<Evidence>>(passages);
+        }
+    }
+
+    [Fact]
+    public async Task Looked_up_passages_go_to_the_model_and_only_a_source_among_them_counts_as_looked_up()
+    {
+        var article = new Evidence("Eiffel Tower", new Uri("https://en.wikipedia.org/wiki/Eiffel_Tower"), "The tower was completed in March 1889.");
+        var evidence = new FakeEvidence(article);
+        var model = new FakeModel((_, user) => user.Contains("1889")
+            ? """{"verdict":"supported","reason":"Completed in 1889.","source":"https://en.wikipedia.org/wiki/Eiffel_Tower"}"""
+            : """{"verdict":"supported","reason":"Yes.","source":"https://example.com/made-up"}""");
+        var gate = new FakeModel((_, user) => user.Contains("lunch") ? """{"verdict":"not_a_claim","reason":"","source":""}""" : """{"verdict":"supported"}""");
+        var provider = new FactCheckProvider(model, gate, evidence);
+
+        var grounded = await provider.QueryAsync(Statement, _ct);
+
+        Assert.NotNull(grounded);
+        Assert.True(grounded.LinkChecked);
+        using (var sent = JsonDocument.Parse(model.Prompts[0].User))
+        {
+            var passage = sent.RootElement.GetProperty("evidence")[0];
+            Assert.Equal("Eiffel Tower", passage.GetProperty("title").GetString());
+            Assert.Equal("https://en.wikipedia.org/wiki/Eiffel_Tower", passage.GetProperty("url").GetString());
+        }
+        Assert.Contains("evidence", model.Prompts[0].System);
+        Assert.DoesNotContain("evidence", gate.Prompts[0].User);   // the local gate judges the bare sentence
+
+        Assert.Null(await provider.QueryAsync(new Query("I had a great lunch today", [], Intent.FactCheck), _ct));
+        Assert.Equal([Claim], evidence.Claims);   // chatter is never looked up
+
+        var cited = await new FactCheckProvider(model, evidence: new FakeEvidence()).QueryAsync(new Query("Paris is in France", [], Intent.FactCheck), _ct);
+        Assert.NotNull(cited);
+        Assert.Equal("https://example.com/made-up", cited.Link?.ToString());
+        Assert.False(cited.LinkChecked);   // a URL the model wrote itself stays "cited by the model"
+    }
+
+    [Fact]
+    public async Task Wikipedia_is_searched_by_content_words_then_by_names_and_its_intros_come_back_best_first()
+    {
+        const string found = """
+            { "query": { "pages": [
+                { "title": "Dennis Ritchie", "index": 2, "fullurl": "https://en.wikipedia.org/wiki/Dennis_Ritchie", "extract": "Dennis Ritchie created C." },
+                { "title": "Python (programming language)", "index": 1, "fullurl": "https://en.wikipedia.org/wiki/Python_(programming_language)", "extract": "Created by Guido van Rossum." },
+                { "title": "No text", "index": 3, "fullurl": "https://en.wikipedia.org/wiki/No_text" } ] } }
+            """;
+        var handler = new FakeHttpHandler(r => FakeHttpHandler.Json(r.RequestUri!.Query.Contains("created") ? """{ "batchcomplete": true }""" : found));
+
+        var passages = await new WikipediaEvidence(new HttpClient(handler)).FindAsync("Python was created by Dennis Ritchie", _ct);
+
+        Assert.Equal(["Python (programming language)", "Dennis Ritchie"], passages.Select(p => p.Title));
+        Assert.Equal("Created by Guido van Rossum.", passages[0].Text);
+        Assert.Equal(2, handler.Requests.Count);   // nothing for every content word, so a second search with the names only
+        Assert.Contains("gsrsearch=Python%20created%20Dennis%20Ritchie", handler.Requests[0].RequestUri!.Query);
+        Assert.Contains("gsrsearch=Python%20Dennis%20Ritchie", handler.Requests[1].RequestUri!.Query);
+        Assert.Equal("en.wikipedia.org", handler.Requests[0].RequestUri!.Host);
+        Assert.Contains("PoVoiceHud", handler.Requests[0].Headers.UserAgent.ToString());
+
+        var down = new WikipediaEvidence(new HttpClient(new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable))));
+        Assert.Empty(await down.FindAsync("Python was created by Dennis Ritchie", _ct));   // a failed lookup only means no passages
     }
 
     [Fact]
@@ -187,28 +260,18 @@ public class FactCheckProviderTests
         Assert.Equal("✅ Supported — Yes.", insight.Answer);
     }
 
-    [Theory]
-    [InlineData("not a url")]
-    [InlineData("file:///C:/secrets.txt")]
-    public async Task Only_http_sources_become_links(string source)
-    {
-        var model = new FakeModel((_, _) => JsonSerializer.Serialize(new { verdict = "supported", reason = "Yes.", source }));
-
-        var insight = await new FactCheckProvider(model).QueryAsync(Statement, _ct);
-
-        Assert.NotNull(insight);
-        Assert.Null(insight.Link);
-    }
-
     [Fact]
-    public async Task Llm_failure_yields_an_unverified_card()
+    public async Task Only_http_sources_become_links()
     {
-        var model = new FakeModel((_, _) => throw new HttpRequestException("503", null, HttpStatusCode.ServiceUnavailable));
+        foreach (var source in new[] { "not a url", "file:///C:/secrets.txt" })
+        {
+            var model = new FakeModel((_, _) => JsonSerializer.Serialize(new { verdict = "supported", reason = "Yes.", source }));
 
-        var insight = await new FactCheckProvider(model).QueryAsync(Statement, _ct);
+            var insight = await new FactCheckProvider(model).QueryAsync(Statement, _ct);
 
-        Assert.NotNull(insight);
-        Assert.Equal("⚠️ Unverified — fact-check service unavailable (503).", insight.Answer);
+            Assert.NotNull(insight);
+            Assert.Null(insight.Link);
+        }
     }
 
     [Fact]
@@ -234,6 +297,12 @@ public class FactCheckProviderTests
         Assert.Equal("system", body.RootElement.GetProperty("messages")[0].GetProperty("role").GetString());
         Assert.Equal("Claim: x", body.RootElement.GetProperty("messages")[1].GetProperty("content").GetString());
         Assert.Equal(0, body.RootElement.GetProperty("temperature").GetDouble());
+        Assert.Equal(300, body.RootElement.GetProperty("max_tokens").GetInt32());
+
+        // An HTTP failure surfaces as HttpRequestException, for the provider to turn into an "unavailable" card.
+        var refused = new FoundryClient(new HttpClient(new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized))),
+            new Uri("https://acme.services.ai.azure.com"), "Llama-3.3-70B-Instruct", "bad");
+        await Assert.ThrowsAsync<HttpRequestException>(() => refused.CompleteAsync("s", "u", _ct));
     }
 
     [Fact]
@@ -254,21 +323,11 @@ public class FactCheckProviderTests
         Assert.Equal("llama3.2", body.RootElement.GetProperty("model").GetString());
     }
 
-    [Theory]
-    [InlineData("https://acme.services.ai.azure.com", true)]
-    [InlineData("http://localhost:11434/v1/chat/completions", true)]
-    [InlineData("http://acme.example.com", false)]
-    public void Endpoint_validation_allows_https_anywhere_and_http_only_on_localhost(string endpoint, bool valid)
-    {
-        Assert.Equal(valid, FoundryClient.IsValidEndpoint(endpoint));
-    }
-
     [Fact]
-    public async Task Foundry_client_surfaces_http_failures_as_HttpRequestException()
+    public void Endpoint_validation_allows_https_anywhere_and_http_only_on_localhost()
     {
-        var client = new FoundryClient(new HttpClient(new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized))),
-            new Uri("https://acme.services.ai.azure.com"), "Llama-3.3-70B-Instruct", "bad");
-
-        await Assert.ThrowsAsync<HttpRequestException>(() => client.CompleteAsync("s", "u", _ct));
+        Assert.True(FoundryClient.IsValidEndpoint("https://acme.services.ai.azure.com"));
+        Assert.True(FoundryClient.IsValidEndpoint("http://localhost:11434/v1/chat/completions"));
+        Assert.False(FoundryClient.IsValidEndpoint("http://acme.example.com"));
     }
 }

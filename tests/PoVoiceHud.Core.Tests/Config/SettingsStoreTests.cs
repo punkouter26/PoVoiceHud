@@ -16,6 +16,7 @@ public class SettingsStoreTests : IDisposable
             RepoPath = @"C:\src\pmis", WhisperThreads = 4, AzdoOrgUrl = "https://dev.azure.com/acme", AzdoProject = "PMIS", AutoExpandSeconds = 30,
             Mode = HudMode.Repo, AudioInput = AudioInput.Both, EnabledSources = Intent.Git | Intent.Schema | Intent.FactCheck,
             FoundryEndpoint = "https://acme.services.ai.azure.com", FoundryModel = "Llama-3.3-70B-Instruct",
+            LookUpClaims = false, StartWithWindows = true, Vocabulary = "Contoso, PMIS", UpdateFeed = @"\\share\PoVoiceHud\releases",
         };
 
         SettingsStore.Save(s, File_);

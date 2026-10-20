@@ -19,8 +19,10 @@ dotnet_sort_system_directives_first = true
 # Analyzer rules switched off, each for a stated reason:
 # CA1716 — names clashing with Visual Basic keywords (Stop, Handles); this code is only ever consumed from C#.
 dotnet_diagnostic.CA1716.severity = none
-# CA1848 — source-generated log delegates; the only log calls here are on failure paths, not hot ones.
+# CA1848 — source-generated log delegates; the log calls here are on failure paths or once-per-event ones (start, settings, recap, update), not hot ones.
 dotnet_diagnostic.CA1848.severity = none
+# CA1873 — lazy evaluation of log arguments; same reason: nothing is logged per utterance or per audio frame.
+dotnet_diagnostic.CA1873.severity = none
 
 # WinUIEx marks WindowEx.Icon obsolete and the XAML compiler still emits a reference to it.
 # That is the only place the obsolete-member warning is waived; everywhere else it stays an error.
