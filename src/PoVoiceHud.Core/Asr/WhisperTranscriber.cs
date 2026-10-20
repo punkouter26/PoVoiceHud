@@ -36,7 +36,7 @@ public sealed class WhisperTranscriber : ITranscriber
     /// <summary>
     /// "Glossary: Inspection, TenantId." from the first words that fit in <paramref name="maxChars"/>, or null when there are none.
     /// Any prompt costs ~80 ms per utterance and every 100 more characters ~50 ms; beyond ~120 Whisper also starts
-    /// capitalising ordinary words ("Inspection Table"), so the default keeps it short (measured in docs/perf.md).
+    /// capitalising ordinary words ("Inspection Table"), so the default keeps it short (measured: about 80–100 ms per sentence; see README).
     /// </summary>
     public static string? PromptFor(IEnumerable<string> words, int maxChars = 120)
     {

@@ -12,7 +12,6 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
-    <PackageReference Include="LibGit2Sharp" />
     <PackageReference Include="Verify.XunitV3" />
   </ItemGroup>
   <ItemGroup>

@@ -23,8 +23,6 @@
     <PackageReference Include="WinUIEx" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" />
     <PackageReference Include="Velopack" />
-    <PackageReference Include="Microsoft.Graphics.Win2D" />
-    <PackageReference Include="ComputeSharp.D2D1.WinUI" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PoVoiceHud.Core\PoVoiceHud.Core.csproj" />

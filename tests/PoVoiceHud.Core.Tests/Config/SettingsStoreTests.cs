@@ -1,5 +1,4 @@
 using PoVoiceHud.Core.Config;
-using PoVoiceHud.Core.Routing;
 
 namespace PoVoiceHud.Core.Tests.Config;
 
@@ -13,10 +12,8 @@ public class SettingsStoreTests : IDisposable
     {
         var s = new Settings
         {
-            RepoPath = @"C:\src\pmis", WhisperThreads = 4, AzdoOrgUrl = "https://dev.azure.com/acme", AzdoProject = "PMIS", AutoExpandSeconds = 30,
-            Mode = HudMode.Repo, AudioInput = AudioInput.Both, EnabledSources = Intent.Git | Intent.Schema | Intent.FactCheck,
-            FoundryEndpoint = "https://acme.services.ai.azure.com", FoundryModel = "Llama-3.3-70B-Instruct",
-            LookUpClaims = false, StartWithWindows = true, Vocabulary = "Contoso, PMIS", UpdateFeed = @"\\share\PoVoiceHud\releases",
+            FoundryEndpoint = "https://acme.services.ai.azure.com", LookUpClaims = false, ListenToCall = true, StartWithWindows = true,
+            Sounds = false, WhisperThreads = 4, Vocabulary = "Contoso, PMIS", UpdateFeed = @"\\share\PoVoiceHud\releases",
         };
 
         SettingsStore.Save(s, File_);
@@ -24,40 +21,31 @@ public class SettingsStoreTests : IDisposable
 
         Assert.Equal(s, loaded);
         Assert.Null(warning);
-        Assert.Contains("\"Git, Schema, FactCheck\"", File.ReadAllText(File_));
+        Assert.DoesNotContain("AudioInput", File.ReadAllText(File_));   // derived from ListenToCall, not stored
     }
 
     [Fact]
-    public void Missing_file_gives_defaults_without_warning()
+    public void Missing_file_gives_defaults_mic_only_with_wikipedia_and_sounds()
     {
         var (loaded, warning) = SettingsStore.Load(File_);
 
         Assert.Equal(new Settings(), loaded);
         Assert.Null(warning);
+        Assert.Equal(AudioInput.Mic, loaded.AudioInput);
+        Assert.True(loaded.LookUpClaims && loaded.Sounds);
         Assert.InRange(loaded.WhisperThreads, 2, 8);
     }
 
     [Fact]
-    public void Defaults_are_simple_mode_mic_only_fact_check()
+    public void A_file_from_an_older_version_loads_and_keys_that_are_gone_are_ignored()
     {
-        var s = new Settings();
+        Directory.CreateDirectory(_dir);
+        File.WriteAllText(File_, """{ "Mode": "Repo", "RepoPath": "C:\\src\\pmis", "FoundryModel": "Llama-3.3-70B-Instruct", "FoundryEndpoint": "https://acme.services.ai.azure.com", "Effects": "Full" }""");
 
-        Assert.Equal(HudMode.Simple, s.Mode);
-        Assert.Equal(AudioInput.Mic, s.AudioInput);
-        Assert.Equal(Intent.FactCheck, s.EnabledSources);
-        Assert.Null(s.RepoPath);
-    }
+        var (loaded, warning) = SettingsStore.Load(File_);
 
-    [Fact]
-    public void Mode_presets_set_audio_and_sources()
-    {
-        var repo = new Settings().ApplyMode(HudMode.Repo);
-        Assert.Equal(AudioInput.Both, repo.AudioInput);
-        Assert.Equal(Intent.FactCheck | Intent.Git | Intent.Schema | Intent.Docs | Intent.Pipeline | Intent.Code, repo.EnabledSources);   // all of Simple, plus the repo
-
-        var simple = repo.ApplyMode(HudMode.Simple);
-        Assert.Equal(AudioInput.Mic, simple.AudioInput);
-        Assert.Equal(Intent.FactCheck, simple.EnabledSources);
+        Assert.Null(warning);
+        Assert.Equal("https://acme.services.ai.azure.com", loaded.FoundryEndpoint);
     }
 
     [Fact]

@@ -4,47 +4,32 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:winuiex="using:WinUIEx"
     xmlns:local="using:PoVoiceHud.App"
-    xmlns:core="using:PoVoiceHud.Core"
-    xmlns:views="using:PoVoiceHud.App.Views"
     xmlns:vm="using:PoVoiceHud.Core.ViewModels"
-    xmlns:win2d="using:Microsoft.Graphics.Canvas.UI.Xaml"
     Title="PoVoiceHud"
     IsAlwaysOnTop="True"
-    IsTitleBarVisible="False"
-    IsResizable="False"
-    IsMaximizable="False"
-    IsMinimizable="False"
     MinWidth="420"
+    MinHeight="320"
     PersistenceId="Hud"
     Width="560"
-    Height="44">
+    Height="560">
+    <!-- A standard window (title bar, minimize, maximize, close, resizable), kept on top of other windows so it can sit beside a call. -->
     <winuiex:WindowEx.SystemBackdrop>
-        <DesktopAcrylicBackdrop />
+        <MicaBackdrop />
     </winuiex:WindowEx.SystemBackdrop>
-    <Grid x:Name="Root" PointerEntered="Root_PointerEntered" PointerExited="Root_PointerExited" KeyboardAcceleratorPlacementMode="Hidden">
-        <Grid.KeyboardAccelerators>
-            <KeyboardAccelerator Key="Escape" Invoked="Escape_Invoked" />
-            <!-- The pill itself is the expand control for the mouse; this is the same thing from the keyboard. -->
-            <KeyboardAccelerator Key="E" Modifiers="Control" Invoked="Toggle_Invoked" />
-        </Grid.KeyboardAccelerators>
+    <Grid x:Name="Root">
         <Grid.RowDefinitions>
             <RowDefinition Height="44" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Pill: mic, headline (latest card or status), session tally, settings, close. Clicking the bare pill opens and closes the panel. -->
-        <Grid x:Name="Pill" Padding="8,0" ColumnSpacing="6" Background="Transparent" Tapped="Pill_Tapped">
+        <!-- Header: mic and level, the headline (latest verdict or status), settings -->
+        <Grid x:Name="Pill" Padding="8,0" ColumnSpacing="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <!-- Behind everything in the pill: the glass aurora and the voice ribbon (G1, G2). Drawn only while something moves. -->
-            <win2d:CanvasSwapChainPanel x:Name="Back" Grid.ColumnSpan="5" Margin="-8,0" IsHitTestVisible="False" />
-            <!-- Microphone plus a five-bar level meter: the bars light up left to right as you speak. With effects on,
-                 the bars give way to the voice ribbon, which the back canvas draws into RibbonSlot. -->
+            <!-- Microphone plus a five-bar level meter: the bars light up left to right as you speak. Click to mute. -->
             <Button x:Name="MicButton" Style="{StaticResource HudIconButton}" Width="NaN" Padding="6,0" Command="{x:Bind ViewModel.ToggleMuteCommand}"
                     AutomationProperties.Name="{x:Bind local:MainWindow.MicName(ViewModel.IsMuted), Mode=OneWay}"
                     ToolTipService.ToolTip="{x:Bind local:MainWindow.MicTip(ViewModel.StatusText, ViewModel.MuteHint), Mode=OneWay}">
@@ -56,8 +41,6 @@
                                   Visibility="{x:Bind ViewModel.IsMuted, Mode=OneWay}" />
                     </Grid>
                     <!-- Each bar is dim until the level passes its threshold (see ShowLevel). -->
-                    <Border x:Name="RibbonSlot" Width="46" Height="22" VerticalAlignment="Center" Visibility="Collapsed"
-                            AutomationProperties.Name="Microphone level" />
                     <StackPanel x:Name="LevelBars" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center" Height="18"
                                 AutomationProperties.Name="Microphone level">
                         <StackPanel.Resources>
@@ -78,117 +61,143 @@
                     </StackPanel>
                 </StackPanel>
             </Button>
-            <TextBlock x:Name="HeadlineText" Grid.Column="1" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" Style="{StaticResource HudHeadline}"
-                       ToolTipService.ToolTip="Click to open or close the panel (Ctrl+E)" />
-            <TextBlock x:Name="TallyText" Grid.Column="2" Text="{x:Bind ViewModel.Tally, Mode=OneWay}" Style="{StaticResource HudCaption}" VerticalAlignment="Center"
-                       AutomationProperties.Name="{x:Bind ViewModel.TallyDetail, Mode=OneWay}"
-                       ToolTipService.ToolTip="{x:Bind ViewModel.TallyDetail, Mode=OneWay}" />
-            <Button Grid.Column="3" x:Name="SettingsButton" Style="{StaticResource HudIconButton}"
+            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Headline, Mode=OneWay}" Style="{StaticResource HudHeadline}" Margin="6,0"
+                       AutomationProperties.HelpText="{x:Bind ViewModel.FactsSummary, Mode=OneWay}"
+                       ToolTipService.ToolTip="{x:Bind ViewModel.FactsSummary, Mode=OneWay}" />
+            <Button Grid.Column="2" x:Name="SettingsButton" Style="{StaticResource HudIconButton}"
                     AutomationProperties.Name="Settings" ToolTipService.ToolTip="Settings">
                 <FontIcon Glyph="&#xE713;" FontSize="14" />
             </Button>
-            <Button Grid.Column="4" Style="{StaticResource HudIconButton}" Click="Close_Click"
-                    AutomationProperties.Name="Close PoVoiceHud" ToolTipService.ToolTip="Close PoVoiceHud">
-                <FontIcon Glyph="&#xE8BB;" FontSize="12" />
-            </Button>
 
-            <!-- Bottom edge of the pill: the focus card's verdict colour, or a running bar while a sentence is being checked -->
-            <Border Grid.ColumnSpan="5" Height="2" Margin="-8,0" VerticalAlignment="Bottom"
-                    Background="{x:Bind views:InsightCard.EdgeBrush(ViewModel.Focus), Mode=OneWay}" />
-            <ProgressBar x:Name="Busy" Grid.ColumnSpan="5" Margin="-8,0" VerticalAlignment="Bottom" IsIndeterminate="True"
-                         AutomationProperties.Name="Checking the last sentence"
-                         Visibility="{x:Bind ViewModel.IsChecking, Mode=OneWay}" />
+            <!-- Bottom edge of the header: this session's verdicts as shares of green, red and amber, or a running bar while a claim is checked -->
+            <Grid Grid.ColumnSpan="3" Height="3" Margin="-8,0" VerticalAlignment="Bottom">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="{x:Bind local:MainWindow.Share(ViewModel.Supported), Mode=OneWay}" />
+                    <ColumnDefinition Width="{x:Bind local:MainWindow.Share(ViewModel.Contradicted), Mode=OneWay}" />
+                    <ColumnDefinition Width="{x:Bind local:MainWindow.Share(ViewModel.Unverified), Mode=OneWay}" />
+                </Grid.ColumnDefinitions>
+                <Border Background="{ThemeResource SystemFillColorSuccessBrush}" />
+                <Border Grid.Column="1" Background="{ThemeResource SystemFillColorCriticalBrush}" />
+                <Border Grid.Column="2" Background="{ThemeResource SystemFillColorCautionBrush}" />
+            </Grid>
+            <ProgressBar Grid.ColumnSpan="3" Margin="-8,0" VerticalAlignment="Bottom" IsIndeterminate="True"
+                         AutomationProperties.Name="Checking a claim" Visibility="{x:Bind ViewModel.IsChecking, Mode=OneWay}" />
         </Grid>
 
-        <!-- Expanded stack; the window grows and shrinks to exactly this panel's height -->
-        <StackPanel Grid.Row="1" x:Name="Expanded" Visibility="{x:Bind ViewModel.IsExpanded, Mode=OneWay}" VerticalAlignment="Top"
-                    Padding="8,4,8,8" Spacing="8" SizeChanged="Expanded_SizeChanged">
-            <!-- The card animates its own entrance (a spring, then the answer sharpening), so there is no theme transition here. -->
-            <ContentControl Content="{x:Bind ViewModel.Focus, Mode=OneWay}" Visibility="{x:Bind ViewModel.HasFocus, Mode=OneWay}"
-                            HorizontalContentAlignment="Stretch" IsTabStop="False">
-                <ContentControl.ContentTemplate>
-                    <DataTemplate x:DataType="vm:InsightCardViewModel">
-                        <views:InsightCard Card="{x:Bind}" />
-                    </DataTemplate>
-                </ContentControl.ContentTemplate>
-            </ContentControl>
-            <TextBlock Text="Say a full sentence that states a fact — it will be checked here." Visibility="{x:Bind ViewModel.NoFocus, Mode=OneWay}"
-                       Style="{StaticResource HudCaption}" TextWrapping="Wrap" Margin="4,4" />
+        <!-- Live or Facts, filling the window, and the switch between them below -->
+        <Grid Grid.Row="1" x:Name="Panel" Background="{ThemeResource HudScrimBrush}" Padding="8,6,8,4" RowSpacing="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-            <!-- Earlier cards, one line each; a click brings that card back as the main one. Lines slide down on a spring as new ones arrive. -->
-            <ItemsRepeater ItemsSource="{x:Bind ViewModel.Shelf}" Visibility="{x:Bind ViewModel.HasShelf, Mode=OneWay}" ElementPrepared="Shelf_ElementPrepared">
-                <ItemsRepeater.Layout>
-                    <StackLayout />
-                </ItemsRepeater.Layout>
-                <ItemsRepeater.ItemTemplate>
-                    <DataTemplate x:DataType="vm:InsightCardViewModel">
-                        <Button Tag="{x:Bind}" Click="History_Click" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                                Background="Transparent" BorderThickness="0" Padding="8,3"
-                                AutomationProperties.Name="{x:Bind Summary}" ToolTipService.ToolTip="{x:Bind Answer}">
-                            <TextBlock Text="{x:Bind Summary}" Style="{StaticResource HudCaption}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-                        </Button>
-                    </DataTemplate>
-                </ItemsRepeater.ItemTemplate>
-            </ItemsRepeater>
-
-            <views:ConstellationView x:Name="Stars" Visibility="{x:Bind ViewModel.IsConstellationOpen, Mode=OneWay}" />
-
-            <!-- Transcript (the last line, or the recent lines after a click) and the constellation and recap buttons beside it.
-                 Each line says who spoke: You (the microphone) or Them (the call). -->
-            <Grid ColumnSpacing="4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Button Command="{x:Bind ViewModel.ToggleTranscriptCommand}"
-                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="10,6"
-                        AutomationProperties.Name="Transcript — show or hide the recent lines"
-                        ToolTipService.ToolTip="Click to show or hide the recent lines">
-                    <Grid>
-                        <TextBlock Style="{StaticResource HudMono}" Visibility="{x:Bind ViewModel.IsTranscriptClosed, Mode=OneWay}">
-                            <Run Text="{x:Bind local:MainWindow.Stamp(ViewModel.LastLine.At), Mode=OneWay}" />
-                            <Run Text="{x:Bind local:MainWindow.Said(ViewModel.LastLine.Source), Mode=OneWay}" FontWeight="SemiBold"
-                                 Foreground="{x:Bind local:MainWindow.SpeakerBrush(ViewModel.LastLine.Source), Mode=OneWay}" />
-                            <Run Text="{x:Bind local:MainWindow.Heard(ViewModel.LastLine), Mode=OneWay}" />
-                        </TextBlock>
-                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.Transcript}" Visibility="{x:Bind ViewModel.IsTranscriptOpen, Mode=OneWay}">
-                            <ItemsRepeater.Layout>
-                                <StackLayout Spacing="2" />
-                            </ItemsRepeater.Layout>
-                            <ItemsRepeater.ItemTemplate>
-                                <DataTemplate x:DataType="core:TranscriptLine">
-                                    <TextBlock Style="{StaticResource HudMono}">
-                                        <Run Text="{x:Bind local:MainWindow.Stamp(At)}" />
-                                        <Run Text="{x:Bind local:MainWindow.Said(Source)}" FontWeight="SemiBold"
-                                             Foreground="{x:Bind local:MainWindow.SpeakerBrush(Source)}" />
-                                        <Run Text="{x:Bind Text}" />
-                                    </TextBlock>
-                                </DataTemplate>
-                            </ItemsRepeater.ItemTemplate>
-                        </ItemsRepeater>
-                    </Grid>
-                </Button>
-                <Button Grid.Column="1" Command="{x:Bind ViewModel.ToggleConstellationCommand}" VerticalAlignment="Stretch" Padding="10,6"
-                        AutomationProperties.Name="Show or hide the constellation of this session's cards"
-                        ToolTipService.ToolTip="Constellation: this session's cards as stars. Time runs left to right; related claims cluster.">
-                    <FontIcon Glyph="&#xE734;" FontSize="13" />
-                </Button>
-                <Button Grid.Column="2" Command="{x:Bind ViewModel.RecapCommand}" VerticalAlignment="Stretch" Padding="10,6"
-                        AutomationProperties.Name="Recap this call"
-                        ToolTipService.ToolTip="{x:Bind local:MainWindow.RecapTip(ViewModel.RecapHotkey), Mode=OneWay}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xE8A5;" FontSize="13" />
-                        <TextBlock Text="Recap" Style="{StaticResource HudCaption}" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
+            <!-- Live: every sentence as it is heard. A claim reads "Checking…" while the model works, then turns green (correct)
+                 or red (incorrect) with the reason under it; "can't tell" is a quiet note. Sentences that are not claims are dimmed. -->
+            <Grid x:Name="LivePage" Visibility="{x:Bind ViewModel.IsLiveOpen, Mode=OneWay}">
+                <ScrollViewer x:Name="LiveScroll" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled"
+                              AutomationProperties.Name="What was said, with each claim's verdict">
+                    <ItemsRepeater x:Name="LiveList" ItemsSource="{x:Bind ViewModel.Live}" ElementPrepared="Highlight_ElementPrepared" MaxWidth="900">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Spacing="4" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LiveLineViewModel">
+                                <Border Padding="10,6" CornerRadius="6" Background="{x:Bind local:MainWindow.LineBack(State), Mode=OneWay}">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Style="{StaticResource HudLine}" Foreground="{x:Bind local:MainWindow.LineText(State), Mode=OneWay}">
+                                            <Run Text="{x:Bind Stamp}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <Run Text="{x:Bind Speaker}" FontWeight="SemiBold" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                            <Run Text="{x:Bind Text}" />
+                                        </TextBlock>
+                                        <Grid ColumnSpacing="6" Visibility="{x:Bind HasNote, Mode=OneWay}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon Glyph="{x:Bind local:MainWindow.LineGlyph(State), Mode=OneWay}" FontSize="12" VerticalAlignment="Top" Margin="0,2,0,0"
+                                                      Foreground="{x:Bind local:MainWindow.LineFore(State), Mode=OneWay}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind Note, Mode=OneWay}" Style="{StaticResource HudCaption}"
+                                                       Foreground="{ThemeResource TextFillColorPrimaryBrush}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </ScrollViewer>
+                <TextBlock Text="Listening. What you say appears here, and each claim is checked as you go: green is correct, red is incorrect."
+                           Visibility="{x:Bind ViewModel.NoLive, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap"
+                           VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="360" />
             </Grid>
-        </StackPanel>
 
-        <!-- Over everything, never hit-tested: comet, shockwave, frost, shards and sparks (G3, G4, G6, G9). It sits in a
-             zero-size Canvas so that its fixed size never takes part in the window's layout. -->
-        <Canvas Grid.RowSpan="2" IsHitTestVisible="False">
-            <win2d:CanvasControl x:Name="Front" ClearColor="Transparent" IsHitTestVisible="False" />
-        </Canvas>
+            <!-- Facts: only the claims found correct or incorrect, newest first, each with its reason and source -->
+            <Grid x:Name="FactsPage" Visibility="{x:Bind ViewModel.IsFactsOpen, Mode=OneWay}" RowSpacing="6">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid ColumnSpacing="8" Margin="4,0,0,0" MaxWidth="900">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{x:Bind ViewModel.FactsSummary, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Click="CopyFacts_Click" IsEnabled="{x:Bind ViewModel.HasFacts, Mode=OneWay}" Padding="10,4"
+                            ToolTipService.ToolTip="Copy every fact as a list, to paste into notes, a chat or an email">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE8C8;" FontSize="13" />
+                            <TextBlock x:Name="CopyFactsText" Text="Copy facts" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+                <ScrollViewer Grid.Row="1" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Verified facts">
+                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.Facts}" MaxWidth="900">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Spacing="6" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="vm:FactViewModel">
+                                <Border Padding="10,8" CornerRadius="6" Background="{x:Bind local:MainWindow.FactBack(IsCorrect)}">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="{x:Bind local:MainWindow.FactGlyph(IsCorrect)}" Foreground="{x:Bind local:MainWindow.FactFore(IsCorrect)}"
+                                                  FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0" AutomationProperties.Name="{x:Bind Label}" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock Style="{StaticResource HudCaption}" Foreground="{ThemeResource TextFillColorPrimaryBrush}" TextWrapping="Wrap">
+                                                <Run Text="{x:Bind Label}" FontWeight="SemiBold" /><Run Text=" — " /><Run Text="{x:Bind Reason}" />
+                                            </TextBlock>
+                                            <HyperlinkButton Command="{x:Bind OpenLinkCommand}" Visibility="{x:Bind HasLink}" Style="{StaticResource HudLink}" Margin="-4,0,0,0">
+                                                <TextBlock Text="{x:Bind LinkLabel}" TextTrimming="CharacterEllipsis" />
+                                            </HyperlinkButton>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="{x:Bind Time}" Style="{StaticResource HudCaption}" HorizontalAlignment="Right" />
+                                            <TextBlock Text="{x:Bind Speaker}" Style="{StaticResource HudCaption}" HorizontalAlignment="Right" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </ScrollViewer>
+                <TextBlock Grid.Row="1" Text="No facts yet. Claims the model finds correct or incorrect are listed here, newest first."
+                           Visibility="{x:Bind ViewModel.NoFacts, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap"
+                           VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="360" />
+            </Grid>
+
+            <SelectorBar x:Name="PageSwitch" Grid.Row="1" SelectionChanged="PageSwitch_SelectionChanged" Padding="0">
+                <SelectorBarItem x:Name="LiveTab" Text="Live" ToolTipService.ToolTip="Everything said, with each claim highlighted by its verdict">
+                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE720;" /></SelectorBarItem.Icon>
+                </SelectorBarItem>
+                <SelectorBarItem x:Name="FactsTab" Text="Facts" ToolTipService.ToolTip="Only the claims found correct or incorrect">
+                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE73E;" /></SelectorBarItem.Icon>
+                </SelectorBarItem>
+            </SelectorBar>
+        </Grid>
     </Grid>
 </winuiex:WindowEx>

@@ -1,16 +1,21 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
-using PoVoiceHud.Core.Routing;
+using System.Text.RegularExpressions;
 
 namespace PoVoiceHud.Core.Providers.FactCheck;
 
+public interface IFactChecker
+{
+    /// <summary>The verdict on <paramref name="sentence"/>, or null when it is not a checkable claim.</summary>
+    Task<Insight?> CheckAsync(string sentence, IReadOnlyList<string> context, CancellationToken ct);
+}
+
 /// <summary>
-/// An LLM verdict for a spoken claim. Degrades to "unverified" at every failure point. An optional local
-/// <paramref name="gate"/> model sees the sentence first, so chatter never reaches the main (cloud) model or the
-/// <paramref name="evidence"/> lookup, whose passages the main model then judges from (ADR 0004).
+/// An LLM verdict for a spoken claim, judged from Wikipedia passages when <paramref name="evidence"/> finds some.
+/// Degrades to "can't tell" at every failure point and says why.
 /// </summary>
-public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gate = null, IEvidenceSource? evidence = null) : IInsightProvider
+public sealed partial class FactChecker(ILanguageModel? model, IEvidenceSource? evidence = null) : IFactChecker
 {
     private const string SystemPrompt =
         "You are a careful fact checker listening to someone speak. The user message is JSON transcribed from live audio: judge only its " +
@@ -20,39 +25,32 @@ public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gat
         "settle it, judge from your own knowledge. Reply with ONLY a JSON object: " +
         "{\"verdict\": \"supported\" | \"contradicted\" | \"unverified\" | \"not_a_claim\", \"reason\": one short sentence, " +
         "\"source\": a URL you are confident exists that backs the reason, or \"\"}. Use \"not_a_claim\" for instructions, chit-chat, " +
-        "questions, opinions, personal statements and fragments — anything that is not a checkable statement about the world. " +
-        "Say \"unverified\" only for a real claim you genuinely cannot judge.";
+        "questions, opinions, value judgements, predictions, promises, personal anecdotes, vague or general remarks, and fragments or " +
+        "garbled speech you cannot make sense of — anything that is not a specific, checkable statement of fact about the world. " +
+        "Say \"unverified\" only for a specific factual claim (names, numbers, dates, events) that you genuinely cannot settle.";
 
     private const string Unreadable = "could not read the model's answer.";
     private const int CacheSize = 200;
     private const string NotAClaim = "not_a_claim";
-    private static readonly string Unverified = $"{Verdict.Unverified.Emoji()} {Verdict.Unverified}";
 
     // Verdicts by lower-cased claim, so a repeated sentence costs no second call. Null = "not a claim".
     private readonly ConcurrentDictionary<string, Insight?> _cache = new();
 
-    public Intent Handles => Intent.FactCheck;
-
-    public async Task<Insight?> QueryAsync(Query query, CancellationToken ct)
+    public async Task<Insight?> CheckAsync(string sentence, IReadOnlyList<string> context, CancellationToken ct)
     {
-        var claim = query.Text.Trim().TrimEnd('.');
-        var headline = $"[FACT] {(claim.Length <= 60 ? claim : claim[..57] + "…")}";
-
-        if (model is null)
-            return Card(headline, $"{Unverified} (no LLM configured) — add a fact-check model in Settings.", 0.5);
+        if (!IsCandidate(sentence)) return null;
+        var claim = sentence.Trim().TrimEnd('.');
+        if (model is null) return CantTell(claim, "add the endpoint and key in Settings to check claims.");
 
         var key = claim.ToLowerInvariant();
-        if (!query.Fresh && _cache.TryGetValue(key, out var cached)) return cached;
+        if (_cache.TryGetValue(key, out var cached)) return cached;
 
         // JSON-encoding the transcript keeps it unmistakably data: remote call audio is untrusted speech.
-        var context = query.Context ?? [];
         var user = PromptJson.Serialize(new { context, statement = claim });
-
         string raw;
         IReadOnlyList<Evidence> passages = [];
         try
         {
-            if (gate is not null && await IsChatterAsync(gate, user, ct)) return Remember(key, null);
             if (evidence is not null && (passages = await evidence.FindAsync(claim, ct)).Count > 0)
                 user = PromptJson.Serialize(new { context, statement = claim, evidence = passages.Select(p => new { title = p.Title, url = p.Url, text = p.Text }) });
             raw = await model.CompleteAsync(SystemPrompt, user, ct);
@@ -60,11 +58,11 @@ public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gat
         catch (HttpRequestException e)
         {
             var status = e.StatusCode is { } code ? ((int)code).ToString(CultureInfo.InvariantCulture) : "network";
-            return Card(headline, $"{Unverified} — fact-check service unavailable ({status}).", 0.4);
+            return CantTell(claim, $"the fact-check service is unavailable ({status}).");
         }
         catch (TimeoutException)
         {
-            return Card(headline, $"{Unverified} — the fact-check model took too long to answer.", 0.4);
+            return CantTell(claim, "the fact-check model took too long to answer.");
         }
 
         var (verdict, reason, source) = Parse(raw);
@@ -78,28 +76,41 @@ public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gat
         var link = Uri.TryCreate(source, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" ? uri : null;
         // Only a link to a passage the app fetched counts as checked; anything else the model wrote may be invented.
         var checkedLink = link is not null && passages.Any(p => SamePage(p.Url, link));
-        return Remember(key, new Insight(Intent.FactCheck, headline, $"{outcome.Emoji()} {outcome} — {reason}", [], confidence,
-            Link: link, Verdict: outcome, LinkChecked: checkedLink));
+        return Remember(key, new Insight(claim, outcome, reason, confidence, link, checkedLink));
     }
+
+    private static readonly HashSet<string> Fillers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "yeah", "yep", "yes", "no", "ok", "okay", "um", "uh", "hmm", "right", "sure", "cool", "great", "good",
+        "sounds", "thanks", "thank", "you", "everyone", "all", "hi", "hello", "hey", "morning", "afternoon",
+        "bye", "alright", "so", "well", "like", "please", "can", "hear", "me", "guys", "folks", "perfect",
+    };
+
+    // A sentence starting with one of these is a question or a request, not a claim.
+    private static readonly HashSet<string> NotClaimStarters = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "what", "what's", "who", "who's", "when", "where", "why", "how", "which", "is", "are", "was", "were",
+        "does", "do", "did", "can", "could", "should", "will", "would", "has", "have",
+        "let", "let's", "please", "go", "open", "show", "give", "send", "run", "check", "make", "tell", "call", "share", "try",
+    };
+
+    /// <summary>
+    /// Worth asking the model about: at least three real words, not only fillers, not a question or a request.
+    /// A cheap word-list check; the model's "not_a_claim" catches what slips through.
+    /// </summary>
+    public static bool IsCandidate(string sentence)
+    {
+        var words = Words().Matches(sentence).Select(m => m.Value).ToArray();
+        return words.Length >= 3 && !words.All(Fillers.Contains) && !sentence.TrimEnd().EndsWith('?') && !NotClaimStarters.Contains(words[0]);
+    }
+
+    [GeneratedRegex(@"[\p{L}']+")]
+    private static partial Regex Words();
 
     private static bool SamePage(Uri a, Uri b) =>
         Uri.Compare(a, b, UriComponents.Host | UriComponents.Path, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0;
 
-    private static Insight Card(string headline, string answer, double confidence) =>
-        new(Intent.FactCheck, headline, answer, [], confidence, Verdict: Verdict.Unverified);
-
-    /// <summary>The gate is best-effort: if it is down or slow the sentence simply goes on to the main model.</summary>
-    private static async Task<bool> IsChatterAsync(ILanguageModel gate, string user, CancellationToken ct)
-    {
-        try
-        {
-            return Parse(await gate.CompleteAsync(SystemPrompt, user, ct)).Verdict == NotAClaim;
-        }
-        catch (Exception e) when (e is HttpRequestException or TimeoutException)
-        {
-            return false;
-        }
-    }
+    private static Insight CantTell(string claim, string why) => new(claim, Verdict.Unverified, why, 0.4);
 
     private Insight? Remember(string key, Insight? insight)
     {

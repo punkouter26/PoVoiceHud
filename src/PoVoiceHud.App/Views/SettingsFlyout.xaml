@@ -4,93 +4,61 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:PoVoiceHud.App.Views"
     Width="400">
-    <ScrollViewer MaxHeight="640">
-        <StackPanel Spacing="12" Padding="4">
+    <!-- The window sets MaxHeight to what the screen has room for each time this opens (FitTo). -->
+    <ScrollViewer x:Name="Scroller" MaxHeight="640">
+        <StackPanel Spacing="10" Padding="4">
 
-            <!-- 1. The fact-check model: one line once it is set up -->
-            <Grid ColumnSpacing="8" Visibility="{x:Bind ViewModel.IsModelCollapsed, Mode=OneWay}">
+            <!-- 1. Where the claims are checked: an Azure AI Foundry resource and its key. The model is built in. -->
+            <TextBox Header="Azure AI Foundry endpoint" Text="{x:Bind ViewModel.Endpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     PlaceholderText="https://&lt;resource&gt;.services.ai.azure.com" />
+            <PasswordBox Header="Key" Password="{x:Bind ViewModel.Key, Mode=TwoWay}"
+                         PlaceholderText="{x:Bind local:SettingsFlyout.KeyPlaceholder(ViewModel.HasKey), Mode=OneWay}" />
+            <Grid ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="Fact-check model" Style="{StaticResource HudCaption}" />
-                    <TextBlock Text="{x:Bind ViewModel.ModelSummary, Mode=OneWay}" Style="{StaticResource HudHeadline}"
-                               ToolTipService.ToolTip="{x:Bind ViewModel.ModelSummary, Mode=OneWay}" />
-                </StackPanel>
-                <Button Grid.Column="1" Content="Change…" Command="{x:Bind ViewModel.ChangeModelCommand}" VerticalAlignment="Center" />
-            </Grid>
-            <StackPanel Spacing="10" Visibility="{x:Bind ViewModel.IsEditingModel, Mode=OneWay}">
-                <ComboBox Header="Fact-check model" ItemsSource="{x:Bind ViewModel.Providers}" SelectedItem="{x:Bind ViewModel.Provider, Mode=TwoWay}"
-                          HorizontalAlignment="Stretch" />
-                <TextBox Header="Endpoint" Text="{x:Bind ViewModel.FoundryEndpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         PlaceholderText="https://&lt;resource&gt;.services.ai.azure.com" Visibility="{x:Bind ViewModel.IsFoundry, Mode=OneWay}" />
-                <TextBox Header="Model" Text="{x:Bind ViewModel.FoundryModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                <PasswordBox Header="API key" Password="{x:Bind ViewModel.FoundryKey, Mode=TwoWay}" Visibility="{x:Bind ViewModel.IsFoundry, Mode=OneWay}"
-                             PlaceholderText="{x:Bind local:SettingsFlyout.KeyPlaceholder(ViewModel.HasFoundryKey), Mode=OneWay}" />
-                <Grid ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Button Content="Test" Command="{x:Bind ViewModel.TestCommand}" ToolTipService.ToolTip="Send one message to the model with what is typed above" />
-                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TestResult, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap" VerticalAlignment="Center" />
-                </Grid>
-            </StackPanel>
-            <TextBlock Text="{x:Bind ViewModel.FoundryError, Mode=OneWay}" Style="{StaticResource HudError}" TextWrapping="Wrap"
-                       Visibility="{x:Bind local:SettingsFlyout.Shown(ViewModel.FoundryError), Mode=OneWay}" />
-
-            <!-- 2. An optional repository. Having one is what turns on the call audio and the answers from the code. -->
-            <Grid ColumnSpacing="8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBox Header="Repository (optional)" Text="{x:Bind ViewModel.RepoPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         PlaceholderText="Azure DevOps URL, or a folder" />
-                <Button Grid.Column="1" Content="Browse…" Command="{x:Bind ViewModel.BrowseCommand}" VerticalAlignment="Bottom" />
-            </Grid>
-            <TextBlock Text="{x:Bind ViewModel.RepoError, Mode=OneWay}" Style="{StaticResource HudError}" TextWrapping="Wrap"
-                       Visibility="{x:Bind local:SettingsFlyout.Shown(ViewModel.RepoError), Mode=OneWay}" />
-            <!-- The token and the connection test only matter once there is a repository. -->
-            <StackPanel Spacing="10" Visibility="{x:Bind ViewModel.HasRepo, Mode=OneWay}">
-                <PasswordBox Header="Azure DevOps access token" Password="{x:Bind ViewModel.AzdoPat, Mode=TwoWay}"
-                             PlaceholderText="{x:Bind local:SettingsFlyout.KeyPlaceholder(ViewModel.HasAzdoPat), Mode=OneWay}" />
-                <Grid ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Button Content="Test repository" Command="{x:Bind ViewModel.TestRepoCommand}" ToolTipService.ToolTip="Open the folder, or ask the URL for its branches using the token" />
-                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.RepoTestResult, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap" VerticalAlignment="Center" />
-                </Grid>
-            </StackPanel>
-
-            <!-- 3. Two switches, then the bug-report helper -->
-            <StackPanel>
-                <CheckBox Content="Look claims up on Wikipedia" IsChecked="{x:Bind ViewModel.LookUpClaims, Mode=TwoWay}" />
-                <TextBlock Text="{x:Bind ViewModel.LookUpNote, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap" Margin="28,0,0,4" />
-                <CheckBox Content="Start with Windows" IsChecked="{x:Bind ViewModel.StartWithWindows, Mode=TwoWay}" />
-                <CheckBox Content="Sounds for verdicts and mute" IsChecked="{x:Bind ViewModel.Sounds, Mode=TwoWay}"
-                          ToolTipService.ToolTip="Short cues, each under a quarter of a second, so call audio capture never transcribes them" />
-            </StackPanel>
-            <ComboBox Header="Effects" ItemsSource="{x:Bind ViewModel.EffectsLevels}" SelectedItem="{x:Bind ViewModel.Effects, Mode=TwoWay}"
-                      HorizontalAlignment="Stretch"
-                      ToolTipService.ToolTip="Full: glass, shockwaves, particles, frost. Subtle: the same moments, calmer and without particles. Off: no motion." />
-            <TextBlock Text="Windows' animation switch and battery saver turn the effects down further." Style="{StaticResource HudCaption}"
-                       TextWrapping="Wrap" Margin="0,-6,0,0" />
-            <Grid ColumnSpacing="8">
-                <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Button Content="Copy diagnostics" Command="{x:Bind ViewModel.CollectDiagnosticsCommand}"
-                        ToolTipService.ToolTip="Zip the logs and settings for a bug report. Transcripts and keys are never included." />
-                <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.DiagnosticsResult, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Content="Check" Command="{x:Bind ViewModel.CheckCommand}"
+                        ToolTipService.ToolTip="Send one message to the model with the endpoint and key typed above" />
+                <Ellipse Grid.Column="1" Width="8" Height="8" VerticalAlignment="Center" Fill="{x:Bind local:SettingsFlyout.Dot(ViewModel.CheckResult), Mode=OneWay}" />
+                <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.CheckResult, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap" VerticalAlignment="Center" />
             </Grid>
-
+            <TextBlock Text="{x:Bind ViewModel.EndpointError, Mode=OneWay}" Style="{StaticResource HudError}" TextWrapping="Wrap"
+                       Visibility="{x:Bind local:SettingsFlyout.Shown(ViewModel.EndpointError), Mode=OneWay}" />
             <TextBlock Style="{StaticResource HudCaption}" TextWrapping="Wrap"
-                       Text="Without a repository the app fact-checks what you say. With one it also listens to the call and answers from the code. Changes apply when you close this panel." />
+                       Text="Claims are checked by gpt-4.1-mini, so the resource needs a deployment of that name. The key is kept in Windows Credential Manager." />
+
+            <!-- 2. Four switches, two by two. The longer explanations are in the tooltips. -->
+            <Grid ColumnSpacing="12" RowSpacing="2" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ToggleSwitch Header="Wikipedia look-ups" IsOn="{x:Bind ViewModel.LookUpClaims, Mode=TwoWay}" MinWidth="0"
+                              AutomationProperties.HelpText="{x:Bind ViewModel.LookUpNote, Mode=OneWay}"
+                              ToolTipService.ToolTip="{x:Bind ViewModel.LookUpNote, Mode=OneWay}" />
+                <ToggleSwitch Grid.Column="1" Header="Also listen to the call" IsOn="{x:Bind ViewModel.ListenToCall, Mode=TwoWay}" MinWidth="0"
+                              ToolTipService.ToolTip="Transcribe and check what the other side of a call says (the speakers' audio) as well as your microphone. Lines are then labelled You and Them." />
+                <ToggleSwitch Grid.Row="1" Header="Start with Windows" IsOn="{x:Bind ViewModel.StartWithWindows, Mode=TwoWay}" MinWidth="0" />
+                <ToggleSwitch Grid.Row="1" Grid.Column="1" Header="Sounds and animations" IsOn="{x:Bind ViewModel.Sounds, Mode=TwoWay}" MinWidth="0"
+                              ToolTipService.ToolTip="A short cue for each verdict and for mute (each under a quarter of a second, so call audio never transcribes it), and the highlight fading in" />
+            </Grid>
+
+            <!-- 3. Quitting: the pill has no close button -->
+            <Grid ColumnSpacing="8" Margin="0,4,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Style="{StaticResource HudCaption}" TextWrapping="Wrap" VerticalAlignment="Center"
+                           Text="Changes apply when this panel closes." />
+                <Button Grid.Column="1" Content="Quit PoVoiceHud" Click="Quit_Click" />
+            </Grid>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

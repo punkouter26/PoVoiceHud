@@ -5,12 +5,10 @@ using PoVoiceHud.Core.Asr;
 using PoVoiceHud.Core.Audio;
 using PoVoiceHud.Core.Config;
 using PoVoiceHud.Core.Providers;
-using PoVoiceHud.Core.Providers.Schema;
-using PoVoiceHud.Core.Routing;
+using PoVoiceHud.Core.Providers.FactCheck;
 using PoVoiceHud.Core.Tests.Fixtures;
 using PoVoiceHud.Core.Tests.Vad;
 using PoVoiceHud.Core.Vad;
-using PoVoiceHud.Core.Workspace;
 
 namespace PoVoiceHud.Core.Tests;
 
@@ -39,49 +37,76 @@ public class HudPipelineTests
         public void Dispose() { }
     }
 
+    /// <summary>Scripted fact checker that counts what it is asked.</summary>
+    private sealed class FakeChecker(Func<string, Insight?> answer) : IFactChecker
+    {
+        public int Calls { get; private set; }
+
+        public Task<Insight?> CheckAsync(string sentence, IReadOnlyList<string> context, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult(answer(sentence));
+        }
+    }
+
+    private const string Claim = "The Eiffel Tower was completed in 1889";
+
     private static async Task<SileroVad> VadAsync()
     {
         await SileroVadTests.EnsureModelAsync();
         return new SileroVad(SileroVadTests.ModelPath);
     }
 
-    private static Router RouterFor(TempRepo repo, params IInsightProvider[] providers) =>
-        new(providers, () => SymbolIndex.Build(repo.Root), () => Settings.RepoSources, NullLogger<Router>.Instance);
+    private static FakeAudioSource Replay() => new(SileroVadTests.ReadFixture("tenant-question.wav"), TimeSpan.FromSeconds(1));
 
     [Fact]
-    public async Task Replayed_question_yields_a_schema_card_within_1200ms()
+    public async Task Replayed_speech_is_transcribed_within_1200ms_and_a_question_is_not_sent_to_the_checker()
     {
-        using var repo = TempRepo.WithSampleProject();
         var models = await ModelStore.EnsureAsync(null, _ct);
         using var vad = await VadAsync();
         using var transcriber = new WhisperTranscriber(models.Whisper, threads: 8);
-        var audio = new FakeAudioSource(SileroVadTests.ReadFixture("tenant-question.wav"), TimeSpan.FromSeconds(1));
-        using var pipeline = new HudPipeline(audio, vad, transcriber, RouterFor(repo, new SchemaProvider(() => repo.Root)), NullLogger<HudPipeline>.Instance);
+        var checker = new FakeChecker(_ => null);
+        using var pipeline = new HudPipeline(Replay(), vad, transcriber, checker, NullLogger<HudPipeline>.Instance);
 
         var sw = Stopwatch.StartNew();
         pipeline.Start();
-        var routed = await pipeline.Insights.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct);
+        var line = await pipeline.Transcript.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct);
         sw.Stop();
 
-        var line = await pipeline.Transcript.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct);
-        TestContext.Current.TestOutputHelper?.WriteLine($"end-to-end {sw.ElapsedMilliseconds} ms; transcript: \"{line.Text}\"");
+        TestContext.Current.TestOutputHelper?.WriteLine($"transcribed in {sw.ElapsedMilliseconds} ms: \"{line.Text}\"");
         Assert.Contains("tenant", line.Text, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(SourceHint.Teams, line.Source);
-        Assert.Equal("[SCHEMA] Inspection.TenantId", routed.Insights[0].Headline);
-        Assert.Equal(line, routed.Line);
-        Assert.True(sw.ElapsedMilliseconds <= 1200, $"end-to-end took {sw.ElapsedMilliseconds} ms (SPEC criterion 4: ≤ 1200 ms)");
+        Assert.True(sw.ElapsedMilliseconds <= 1200, $"transcription took {sw.ElapsedMilliseconds} ms (≤ 1200 ms)");
+        Assert.Equal(0, checker.Calls);   // "does the inspection table have…" is a question, not a claim
+    }
+
+    [Fact]
+    public async Task A_claim_is_marked_checking_until_its_verdict_arrives_with_its_line()
+    {
+        using var vad = await VadAsync();
+        var transcriber = new GatedTranscriber(Claim);
+        transcriber.Release.SetResult();
+        var checker = new FakeChecker(s => new Insight(s, Verdict.Supported, "Yes.", 0.9));
+        using var pipeline = new HudPipeline(Replay(), vad, transcriber, checker, NullLogger<HudPipeline>.Instance);
+
+        pipeline.Start();
+        var line = await pipeline.Transcript.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct);
+        var verdict = await pipeline.Verdicts.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct);
+
+        Assert.Equal(line, verdict.Line);
+        Assert.Equal(Verdict.Supported, verdict.Verdict.Verdict);
+        Assert.Equal((line, true), await pipeline.Checking.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct));    // busy while the checker works…
+        Assert.Equal((line, false), await pipeline.Checking.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct));   // …and released afterwards
     }
 
     [Fact]
     public async Task Mute_discards_queued_audio_and_the_transcription_in_flight()
     {
-        using var repo = TempRepo.WithSampleProject();
         using var vad = await VadAsync();
-        var transcriber = new GatedTranscriber("does the inspection table have a tenant id foreign key");
-        var audio = new FakeAudioSource(SileroVadTests.ReadFixture("tenant-question.wav"), TimeSpan.FromSeconds(1));
-        var calls = 0;
-        var provider = new FakeProvider(Intent.Schema, _ => { calls++; return new Insight(Intent.Schema, "x", "y", []); });
-        using var pipeline = new HudPipeline(audio, vad, transcriber, RouterFor(repo, provider), NullLogger<HudPipeline>.Instance);
+        var transcriber = new GatedTranscriber(Claim);
+        var audio = Replay();
+        var checker = new FakeChecker(_ => null);
+        using var pipeline = new HudPipeline(audio, vad, transcriber, checker, NullLogger<HudPipeline>.Instance);
 
         pipeline.Start();
         await transcriber.Started.Task.WaitAsync(Timeout, _ct);
@@ -91,62 +116,35 @@ public class HudPipelineTests
 
         Assert.True(audio.IsMuted);
         Assert.False(pipeline.Transcript.TryRead(out _));
-        Assert.False(pipeline.Insights.TryRead(out _));
-        Assert.Equal(0, calls);
+        Assert.False(pipeline.Verdicts.TryRead(out _));
+        Assert.Equal(0, checker.Calls);
         Assert.Equal(1, transcriber.Calls);
     }
 
     [Fact]
-    public async Task Recheck_sends_the_last_sentence_to_the_providers_again_marked_fresh()
+    public async Task Blank_transcriptions_never_reach_the_transcript_or_the_checker()
     {
-        using var repo = TempRepo.WithSampleProject();
-        using var vad = await VadAsync();
-        var transcriber = new GatedTranscriber("does the inspection table have a tenant id foreign key");
-        transcriber.Release.SetResult();
-        var audio = new FakeAudioSource(SileroVadTests.ReadFixture("tenant-question.wav"), TimeSpan.FromSeconds(1));
-        var seen = new System.Collections.Concurrent.ConcurrentQueue<Query>();
-        var provider = new FakeProvider(Intent.Schema, q => { seen.Enqueue(q); return new Insight(Intent.Schema, "x", "y", []); });
-        using var pipeline = new HudPipeline(audio, vad, transcriber, RouterFor(repo, provider), NullLogger<HudPipeline>.Instance);
-
-        pipeline.Start();
-        await pipeline.Insights.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct);
-        pipeline.Recheck();
-        await pipeline.Insights.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct);
-
-        Assert.Equal([false, true], seen.Select(q => q.Fresh));
-        Assert.True(await pipeline.Checking.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct));    // busy while the providers work…
-        Assert.False(await pipeline.Checking.ReadAsync(_ct).AsTask().WaitAsync(Timeout, _ct));   // …and released afterwards
-    }
-
-    [Fact]
-    public async Task Blank_transcriptions_never_reach_the_transcript_or_router()
-    {
-        using var repo = TempRepo.WithSampleProject();
         using var vad = await VadAsync();
         var transcriber = new GatedTranscriber("");
         transcriber.Release.SetResult();
-        var audio = new FakeAudioSource(SileroVadTests.ReadFixture("tenant-question.wav"), TimeSpan.FromSeconds(1));
-        var calls = 0;
-        var provider = new FakeProvider(Intent.Schema, _ => { calls++; return null; });
-        using var pipeline = new HudPipeline(audio, vad, transcriber, RouterFor(repo, provider), NullLogger<HudPipeline>.Instance);
+        var checker = new FakeChecker(_ => null);
+        using var pipeline = new HudPipeline(Replay(), vad, transcriber, checker, NullLogger<HudPipeline>.Instance);
 
         pipeline.Start();
         await transcriber.Started.Task.WaitAsync(Timeout, _ct);
         await Task.Delay(300, _ct);
 
         Assert.False(pipeline.Transcript.TryRead(out _));
-        Assert.Equal(0, calls);
+        Assert.Equal(0, checker.Calls);
     }
 
     [Fact]
     public async Task Status_from_the_audio_source_is_forwarded()
     {
-        using var repo = TempRepo.WithSampleProject();
         using var vad = await VadAsync();
         var transcriber = new GatedTranscriber("");
         transcriber.Release.SetResult();
-        var audio = new FakeAudioSource([], TimeSpan.Zero);
-        using var pipeline = new HudPipeline(audio, vad, transcriber, RouterFor(repo), NullLogger<HudPipeline>.Instance);
+        using var pipeline = new HudPipeline(new FakeAudioSource([], TimeSpan.Zero), vad, transcriber, new FakeChecker(_ => null), NullLogger<HudPipeline>.Instance);
 
         pipeline.Start();
 
@@ -154,28 +152,7 @@ public class HudPipelineTests
     }
 
     [Fact]
-    public async Task Container_wires_all_providers_with_fakes_for_unconfigured_services()
-    {
-        using var repo = TempRepo.WithSampleProject();
-        await SileroVadTests.EnsureModelAsync();
-        var services = new ServiceCollection();
-        services.AddSingleton<IAudioSource>(new FakeAudioSource([], TimeSpan.Zero));
-        services.AddSingleton<ITranscriber>(new GatedTranscriber(""));
-        services.AddPoVoiceHudCore(new Settings { RepoPath = repo.Root }.ApplyMode(HudMode.Repo), new ModelPaths("unused", SileroVadTests.ModelPath));
-        await using var container = services.BuildServiceProvider();
-
-        var providers = container.GetRequiredService<IEnumerable<IInsightProvider>>().ToList();
-        Assert.Equal(6, providers.Count);
-        Assert.Contains(providers, p => p is Core.Providers.Code.CodeProvider);
-        Assert.IsType<UnconfiguredProvider>(providers.Single(p => p.Handles == Intent.Pipeline));
-        Assert.Contains(providers, p => p is SchemaProvider);
-        Assert.Contains(providers, p => p is Core.Providers.FactCheck.FactCheckProvider);
-        Assert.NotNull(container.GetRequiredService<HudPipeline>());
-        Assert.NotNull(container.GetRequiredService<Core.Workspace.Workspace>());
-    }
-
-    [Fact]
-    public async Task Simple_mode_container_needs_no_repo_and_routes_statements_to_fact_check()
+    public async Task Container_without_an_endpoint_wires_a_checker_that_says_what_to_set_up()
     {
         await SileroVadTests.EnsureModelAsync();
         var services = new ServiceCollection();
@@ -184,13 +161,8 @@ public class HudPipelineTests
         services.AddPoVoiceHudCore(new Settings(), new ModelPaths("unused", SileroVadTests.ModelPath));
         await using var container = services.BuildServiceProvider();
 
-        Assert.Null(container.GetService<Core.Workspace.Workspace>());
-        var router = container.GetRequiredService<Router>();
-        var insights = await router.RouteAsync("The Eiffel Tower was completed in 1889", _ct);
-
-        var card = Assert.Single(insights);
-        Assert.Equal(Intent.FactCheck, card.Intent);
-        Assert.StartsWith("⚠️ Unverified (no LLM configured)", card.Answer);   // no Foundry endpoint in this test's settings
-        Assert.Empty(await router.RouteAsync("who modified the invoice service last week", _ct));
+        Assert.NotNull(container.GetRequiredService<HudPipeline>());
+        var verdict = await container.GetRequiredService<IFactChecker>().CheckAsync(Claim, [], _ct);
+        Assert.StartsWith("⚠️ Can't tell — add the endpoint and key in Settings", verdict?.Answer);
     }
 }

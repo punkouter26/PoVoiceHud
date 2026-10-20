@@ -4,9 +4,6 @@
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageVersion Include="WinUIEx" Version="2.9.3" />
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <!-- Effects: Win2D draws, ComputeSharp compiles the HLSL pixel shaders written in C# -->
-    <PackageVersion Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
-    <PackageVersion Include="ComputeSharp.D2D1.WinUI" Version="3.2.0" />
     <!-- Installer and updates (unpackaged, so no MSIX) -->
     <PackageVersion Include="Velopack" Version="1.2.161" />
     <!-- Audio / inference -->
@@ -15,13 +12,7 @@
     <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
     <PackageVersion Include="Whisper.net" Version="1.9.1" />
     <PackageVersion Include="Whisper.net.Runtime" Version="1.9.1" />
-    <!-- Workspace providers -->
-    <PackageVersion Include="LibGit2Sharp" Version="0.32.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
-    <PackageVersion Include="Markdig" Version="1.4.0" />
     <!-- Helpers -->
-    <PackageVersion Include="Humanizer.Core" Version="3.0.10" />
-    <PackageVersion Include="Raffinert.FuzzySharp" Version="2.0.3" />
     <PackageVersion Include="Polly.Core" Version="8.7.0" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.12" />

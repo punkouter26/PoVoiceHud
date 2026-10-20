@@ -5,7 +5,7 @@ using NAudio.Wave;
 namespace PoVoiceHud.Core.Audio;
 
 /// <summary>The moments that have a sound.</summary>
-public enum Cue { Supported, Contradicted, Unverified, Muted, Unmuted, Rated, Milestone }
+public enum Cue { Supported, Contradicted, Unverified, Muted, Unmuted }
 
 /// <summary>
 /// Short FM-synthesized cues on the default output, rendered once and replayed. Every buffer is cut at
@@ -35,10 +35,7 @@ public static class SoundPalette
         // two glassy ticks: not sure
         Cue.Unverified => [new(0, 45, 1760, 1760, 3.5, 4, 0.1), new(65, 45, 1568, 1568, 3.5, 4, 0.08)],
         Cue.Muted => [new(0, 150, 880, 440, 1, 1.2, 0.14)],
-        Cue.Unmuted => [new(0, 150, 440, 880, 1, 1.2, 0.14)],
-        Cue.Rated => [new(0, 55, 1318.5, 1318.5, 2, 1.5, 0.12)],
-        // C–E–G arpeggio: ten more cards marked right this week
-        _ => [Pluck(0, 1046.5, 110, 0.14), Pluck(55, 1318.5, 110, 0.14), Pluck(110, 1568, 120, 0.16)],
+        _ => [new(0, 150, 440, 880, 1, 1.2, 0.14)],   // unmuted
     };
 
     /// <summary>Plays <paramref name="cue"/> panned −1 (left) … 1 (right); returns at once.</summary>
