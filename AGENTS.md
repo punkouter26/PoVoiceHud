@@ -14,8 +14,7 @@
 ## 3. Architecture & Configuration
 
 - **Documentation Check:** Check the root `docs/` folder and `README.md` first for project architecture context, and sync both immediately whenever dependencies, configuration keys, or major endpoints change.
-- **Maximum Automation:** Eliminate manual CLI typing or web GUI actions; automate tasks whenever technically feasible.
-- **No Local Secrets:** Do not use `dotnet user-secrets` to store data locally. Put it in `appsettings` or Azure Key Vault (if one exists).
+- **Maximum Automation:** Eliminate manual CLI typing or web GUI actions—automate tasks whenever technically feasible.
 
 ## 4. UI Changes & Reporting
 
@@ -25,4 +24,4 @@
   1. Toddler: One sentence simple conceptual intuition.
   2. Child: One sentence functional behavior summary.
   3. Adult: One sentence technical/architectural summary.
-- **Removal Notice:** If a single prompt removes more than 100 lines of code overall, mention it.
+- **Direction Questions:** After any code change over 100 lines, ask 3 optional high-level questions about the direction of the app's purpose that could trigger additional changes.
