@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoVoiceHud — standard window (2026-10-20)</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1b1b1f; --soft: #5c5f66; --line: #d9dbe0; --bg: #f6f7f9; --card: #ffffff; --mark: #c81e2d; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ececf1; --soft: #a3a7b0; --line: #34363c; --bg: #17181b; --card: #212327; } }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h3 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--soft); }
+  p.lead { color: var(--soft); margin: 0 0 20px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  .shot { position: relative; }
+  .shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; background: var(--mark); color: #fff;
+         font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+  ol.notes { list-style: none; margin: 12px 0 0; padding: 0; counter-reset: n; }
+  ol.notes li { counter-increment: n; position: relative; padding-left: 34px; margin: 0 0 10px; }
+  ol.notes li::before { content: counter(n); position: absolute; left: 0; top: 1px; width: 22px; height: 22px; border-radius: 50%;
+                        background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>A standard window</h1>
+  <p class="lead">Debug build with <code>--demo</code>, captured with <code>PrintWindow</code> at 150 %. "Before" is the borderless pill from earlier today; "after" is the working tree on 2026-10-20.</p>
+  <div class="pair">
+    <section class="side">
+      <h3>Before: a borderless pill</h3>
+      <div class="shot"><img src="261020-simple-live.png" alt="Before: no title bar; the pill's headline had a chevron that opened and closed the panel"></div>
+    </section>
+    <section class="side">
+      <h3>After: title bar, minimize, maximize, close</h3>
+      <div class="shot">
+        <img src="261020-window-after.png" alt="After: a Windows title bar with the app icon, the name PoVoiceHud, and minimize, maximize and close buttons; the header and the Live page fill the window">
+        <span class="pin" style="left:4%; top:3%">1</span>
+        <span class="pin" style="left:86%; top:3%">2</span>
+        <span class="pin" style="left:50%; top:10.5%">3</span>
+        <span class="pin" style="left:50%; top:80%">4</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes">
+    <li><b>Title bar</b> with the app icon and name, on Mica. Drag it to move, double-click to maximize, and use Win+Arrow to snap.</li>
+    <li><b>Minimize, maximize and close.</b> Minimize replaces the old "click the headline to collapse", and close quits (as before, so does the tray or Settings).</li>
+    <li><b>The header</b> keeps the mic, the latest verdict and ⚙, but the headline is plain text now: there's nothing left for it to open or close.</li>
+    <li><b>The pages fill the window</b> at any size, down to 420 × 320, and scroll inside it. The window remembers its size and position, and stays on top of other windows.</li>
+  </ol>
+</main>
+</body>
+</html>

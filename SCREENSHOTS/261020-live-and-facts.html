@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoVoiceHud — Live and Facts (2026-10-20)</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1b1b1f; --soft: #5c5f66; --line: #d9dbe0; --bg: #f6f7f9; --card: #ffffff; --mark: #c81e2d; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ececf1; --soft: #a3a7b0; --line: #34363c; --bg: #17181b; --card: #212327; } }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 32px 0 12px; }
+  h3 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--soft); }
+  p.lead { color: var(--soft); margin: 0 0 20px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  .shot { position: relative; }
+  .shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; background: var(--mark); color: #fff;
+         font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+  ol.notes { list-style: none; margin: 12px 0 0; padding: 0; counter-reset: n; }
+  ol.notes li { counter-increment: n; position: relative; padding-left: 34px; margin: 0 0 10px; }
+  ol.notes li::before { content: counter(n); position: absolute; left: 0; top: 1px; width: 22px; height: 22px; border-radius: 50%;
+                        background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+  code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>A real-time fact checker: Live and Facts</h1>
+  <p class="lead">Debug build with <code>--demo</code> (a sample conversation, no audio), captured with <code>PrintWindow</code> at 150 %. "Before" is this morning's build (Cards, Session, Recap). "After" is the working tree on 2026-10-20 with all ten simplifications.</p>
+
+  <h2>Cards → Live</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before: Cards</h3>
+      <div class="shot"><img src="261020-ui-after-hud.png" alt="Before: a focus card with one verdict, three history rows, the last transcript line, and Cards, Session and Recap at the bottom"></div>
+    </section>
+    <section class="side">
+      <h3>After: Live</h3>
+      <div class="shot">
+        <img src="261020-simple-live.png" alt="After: the transcript, line by line; claims highlighted green, red or amber with the reason underneath; the newest line reads Checking">
+        <span class="pin" style="left:3%; top:13%">1</span>
+        <span class="pin" style="left:3%; top:22%">2</span>
+        <span class="pin" style="left:3%; top:40%">3</span>
+        <span class="pin" style="left:3%; top:51%">4</span>
+        <span class="pin" style="left:3%; top:63%">5</span>
+        <span class="pin" style="left:90%; top:4.5%">6</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes">
+    <li><b>Every line, as it is heard</b>, with the time and who spoke (<i>You</i> and <i>Them</i> only when the call is heard too). Questions and chit-chat stay plain.</li>
+    <li><b>Correct</b>: the sentence turns green and the reason sits under it. The highlight fades in when <i>Sounds and animations</i> is on.</li>
+    <li><b>Incorrect</b>: red, with the correction.</li>
+    <li><b>Can't tell</b>: amber. It shows here only, not on Facts.</li>
+    <li><b>Checking…</b> shows on the sentence itself while the model works, from the moment the line is queued.</li>
+    <li><b>The panel stays open.</b> The headline, with its chevron, is the only thing that closes it. There's no auto-open, auto-close or pinning.</li>
+  </ol>
+
+  <h2>Session → Facts</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before: Session</h3>
+      <div class="shot"><img src="261020-ui-after-session.png" alt="Before: a starfield of cards, a tally, and a timeline of lines and cards"></div>
+    </section>
+    <section class="side">
+      <h3>After: Facts</h3>
+      <div class="shot">
+        <img src="261020-simple-facts.png" alt="After: '1 correct · 1 incorrect', a Copy facts button, and two rows: the incorrect Python claim and the correct Eiffel Tower claim, each with reason, source link and time">
+        <span class="pin" style="left:4%; top:13.5%">1</span>
+        <span class="pin" style="left:83%; top:13.5%">2</span>
+        <span class="pin" style="left:4%; top:21%">3</span>
+        <span class="pin" style="left:12%; top:30%">4</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes">
+    <li><b>The count</b> of correct and incorrect claims this session. The headline's tooltip shows it too.</li>
+    <li><b>Copy facts</b> replaces Recap: one <code>✅ Correct: claim — reason (link)</code> line per fact, ready to paste.</li>
+    <li><b>Only verified claims</b>, newest first. A claim said again is one row marked ×2.</li>
+    <li><b>The source</b>: <i>(looked up)</i> when it is a Wikipedia article the app fetched itself, <i>(cited by the model)</i> otherwise.</li>
+  </ol>
+
+  <h2>Settings</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before</h3>
+      <div class="shot"><img src="261020-ui-after-settings.png" alt="Before: provider, endpoint, model, key, repository, Check connections, four switches, an Effects control, diagnostics and close"></div>
+    </section>
+    <section class="side">
+      <h3>After</h3>
+      <div class="shot">
+        <img src="261020-simple-settings.png" alt="After: endpoint, key, a Check button with a status dot, a note that gpt-4.1-mini is used, and four switches: Wikipedia look-ups, Also listen to the call, Start with Windows, Sounds and animations">
+        <span class="pin" style="left:10%; top:14%">1</span>
+        <span class="pin" style="left:30%; top:43%">2</span>
+        <span class="pin" style="left:10%; top:63%">3</span>
+        <span class="pin" style="left:88%; top:94%">4</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes">
+    <li><b>Endpoint and key only.</b> There's no provider choice and no model box: <code>gpt-4.1-mini</code> is built in. <b>Check</b> says what's wrong in plain words (key refused, no such deployment, unreachable).</li>
+    <li>A line saying which model is used and where the key is kept.</li>
+    <li><b>Four switches.</b> <i>Also listen to the call</i> replaces Repo mode's call audio. <i>Sounds and animations</i> replaces Sounds plus the Full / Subtle / Off effects levels.</li>
+    <li><b>Quit</b> stays here. Copy diagnostics moved to the tray menu.</li>
+  </ol>
+
+  <h2>All ten</h2>
+  <table>
+    <tr><th>#</th><th>Change</th></tr>
+    <tr><td>1</td><td>Live and Facts pages replace the focus card, shelf, Session tab and constellation</td></tr>
+    <tr><td>2</td><td>The panel stays open; the 20-second auto-close, hover-to-keep-open and pinning are gone</td></tr>
+    <tr><td>3</td><td>Correct / Incorrect / Can't tell; "Checking…" on the sentence; nothing at all for non-claims</td></tr>
+    <tr><td>4</td><td>Repo mode is gone: git, schema, docs, Azure DevOps and code answers, the repository settings and the token. "Also listen to the call" stays.</td></tr>
+    <tr><td>5</td><td>Ratings are gone: 👍/👎, the weekly score and milestones</td></tr>
+    <tr><td>6</td><td>Recap is gone (the writer, its hotkey, the tray item and the mute prompt); Copy facts replaces it</td></tr>
+    <tr><td>7</td><td><code>gpt-4.1-mini</code> on Foundry is fixed; the Ollama option, the model box and the local chatter filter are gone</td></tr>
+    <tr><td>8</td><td>Settings: endpoint, key, Check, and four switches</td></tr>
+    <tr><td>9</td><td>One mute hotkey; the re-check and recap hotkeys, Ctrl+E/Esc, the pill's right-click menu and the tray's mute and Start-with-Windows items are gone</td></tr>
+    <tr><td>10</td><td>The GPU effects are gone (aurora, ribbon, shockwaves, frost, sparks, comets, constellation, springs), leaving the verdict colours and a fade. README is now the only design doc.</td></tr>
+  </table>
+</main>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoVoiceHud — UI consolidation, U1–U10 (2026-10-20)</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1b1b1f; --soft: #5c5f66; --line: #d9dbe0; --bg: #f6f7f9; --card: #ffffff; --mark: #c81e2d; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ececf1; --soft: #a3a7b0; --line: #34363c; --bg: #17181b; --card: #212327; } }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 32px 0 12px; }
+  h3 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--soft); }
+  p.lead { color: var(--soft); margin: 0 0 20px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  .shot { position: relative; }
+  .shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; background: var(--mark); color: #fff;
+         font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+  ol.notes { list-style: none; margin: 12px 0 0; padding: 0; counter-reset: n; }
+  ol.notes li { counter-increment: n; position: relative; padding-left: 34px; margin: 0 0 10px; }
+  ol.notes li::before { content: counter(n); position: absolute; left: 0; top: 1px; width: 22px; height: 22px; border-radius: 50%;
+                        background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+  code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+  .note { color: var(--soft); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>UI consolidation: U1–U10</h1>
+  <p class="lead">Debug build with <code>--demo</code> (sample cards, no audio), captured with <code>PrintWindow</code> at 150 % scaling. "Before" is commit <code>3d4be18</code>; "after" is the working tree on 2026-10-20. The faint colour in the pill is the effects aurora (Effects: Full).</p>
+
+  <h2>The panel at rest: Cards</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before</h3>
+      <div class="shot"><img src="261020-ui-before-hud.png" alt="Before: pill with tally and close button; card with four footer buttons; four history lines with bracket tags; transcript button, star button and Recap"></div>
+    </section>
+    <section class="side">
+      <h3>After</h3>
+      <div class="shot">
+        <img src="261020-ui-after-hud.png" alt="After: pill with headline and gear only, a green and red bar under it; card with two rating buttons; three history rows with icons and ages; a +1 more link; Cards and Session tabs with Recap">
+        <span class="pin" style="left:40%; top:7%">1</span>
+        <span class="pin" style="left:72%; top:13%">2</span>
+        <span class="pin" style="left:88%; top:37%">3</span>
+        <span class="pin" style="left:2.5%; top:51%">4</span>
+        <span class="pin" style="left:23%; top:72%">5</span>
+        <span class="pin" style="left:36%; top:92%">6</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes">
+    <li><b>More room for the headline (U6, U10).</b> The tally and ✕ are gone from the pill; the headline gains about 120 px. It is now a real button, so Tab and Narrator reach the panel too. Right-click the pill for the panel, Recap, Settings and <i>Close PoVoiceHud</i>.</li>
+    <li><b>Tally as a bar (U6).</b> The pill's bottom edge shows this session's verdicts as shares of green, red and amber. Hovering the headline gives the numbers, and so does the Session tab.</li>
+    <li><b>Quieter card (U4).</b> Copy and put-away appear only while the pointer or keyboard focus is on the card. They stay in the tab order, and right-click (or press and hold) offers Right / Wrong / Copy / Put away. Narrator reads each new answer as it arrives (U10).</li>
+    <li><b>Shelf rows (U5).</b> The bracket tags (<code>[SCHEMA]</code>, <code>[DOCS]</code>) become icons. A fact check shows its verdict instead. Each row now shows how long ago it was said, and the shelf holds three rows instead of six.</li>
+    <li><b>+N more in Session (U5).</b> Says how many older cards the Session tab holds, and opens it.</li>
+    <li><b>One switch (U8).</b> <i>Cards | Session</i> replaces the transcript button and ✦, so only one view is ever open.</li>
+  </ol>
+
+  <h2>The whole session in one place (U7)</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before: shelf + 190 px constellation + transcript, all at once</h3>
+      <div class="shot"><img src="261020-ui-before-constellation.png" alt="Before: six history lines, a tall starfield and a one-line transcript all open together"></div>
+    </section>
+    <section class="side">
+      <h3>After: Session tab</h3>
+      <div class="shot">
+        <img src="261020-ui-after-session.png" alt="After: a short starfield strip, a two-line tally, and a timeline where each heard line is followed by the cards it produced">
+        <span class="pin" style="left:50%; top:20%">1</span>
+        <span class="pin" style="left:57%; top:34%">2</span>
+        <span class="pin" style="left:3%; top:52%">3</span>
+        <span class="pin" style="left:3%; top:58%">4</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes">
+    <li><b>Constellation strip.</b> It is 76 px instead of 190, with the stars spread over less margin. Hover still names a star and a click brings its card back. The axis caption moved into the tooltip, so it no longer covers the first stars.</li>
+    <li><b>Tally.</b> Split by you and the call, plus your ratings for the last 7 days. Before, this was only in a tooltip.</li>
+    <li><b>Timeline.</b> Every line heard (up to 40 entries, lines and cards together), with the speaker in colour…</li>
+    <li><b>…and the cards it brought underneath.</b> Click one to make it the focus card again. Any card of the session can now come back, not only the six on the shelf. A recap opens this tab. A new card that opens the panel shows Cards.</li>
+  </ol>
+  <section class="side" style="margin-top:16px">
+    <h3>After, with a long session (<code>--fx constellation</code>)</h3>
+    <div class="shot"><img src="261020-ui-after-session-full.png" alt="After: the Session tab with ten stars and a long timeline that scrolls, the tabs still visible below"></div>
+    <p class="note" style="margin:10px 0 0">The timeline scrolls inside the panel. The window does not grow past the screen's work area, and the tabs and Recap stay in view (U9).</p>
+  </section>
+
+  <h2>Settings</h2>
+  <div class="pair">
+    <section class="side">
+      <h3>Before</h3>
+      <div class="shot"><img src="261020-ui-before-settings.png" alt="Before: model fields, Test, repository box, three checkboxes with a caption, an Effects drop-down; Copy diagnostics is cut off below"></div>
+    </section>
+    <section class="side">
+      <h3>After</h3>
+      <div class="shot">
+        <img src="261020-ui-after-settings.png" alt="After: model fields with Model and API key side by side, the repository folded to one line with a dot and Add…, one Check connections button, a two-by-two grid of switches and a three-part Effects control, Copy diagnostics and Close PoVoiceHud">
+        <span class="pin" style="left:50%; top:39%">1</span>
+        <span class="pin" style="left:14%; top:47%">2</span>
+        <span class="pin" style="left:40%; top:54%">3</span>
+        <span class="pin" style="left:44%; top:61%">4</span>
+        <span class="pin" style="left:88%; top:77%">5</span>
+        <span class="pin" style="left:88%; top:86%">6</span>
+      </div>
+    </section>
+  </div>
+  <ol class="notes">
+    <li><b>Model and API key share a row.</b> In the demo the model isn't set up yet, so its fields are open. Once it works, it folds to one line with a status dot.</li>
+    <li><b>Repository folded (U2).</b> It shows <code>org/project/repo</code>, the folder's name, or <i>None — fact-checking only</i>, with <b>Change…</b>/<b>Add…</b>. An Azure DevOps URL without a token stays open, and so does one with an error. The dot is grey before a check, then green or red.</li>
+    <li><b>One Check connections (U1).</b> It replaces <i>Test</i> and <i>Test repository</i>, checking the model and the repository (when there is one) in parallel. Each result shows under its own line.</li>
+    <li><b>2×2 switches (U3).</b> Wikipedia, Start with Windows and Sounds. Their explanations moved to tooltips, and the Wikipedia privacy note is also the switch's help text for Narrator.</li>
+    <li><b>Effects as a three-part switch (U3).</b> <i>Off | Subtle | Full</i> replaces the drop-down. Pressing the level that is already on leaves it on.</li>
+    <li><b>Close PoVoiceHud</b> lives here now that the pill has no ✕ (U6).</li>
+  </ol>
+
+  <div class="pair">
+    <section class="side">
+      <h3>Before, every field unfolded (<code>--all</code>)</h3>
+      <div class="shot"><img src="261020-ui-before-settings-all.png" alt="Before: everything unfolded; the panel is cut off at 640 px after the Sounds checkbox"></div>
+      <p class="note" style="margin:10px 0 0">Cut off at a fixed 640 px: Effects, Copy diagnostics and the note are out of reach.</p>
+    </section>
+    <section class="side">
+      <h3>After, every field unfolded</h3>
+      <div class="shot"><img src="261020-ui-after-settings-all.png" alt="After: everything unfolded and the whole panel visible, down to Close PoVoiceHud and the note"></div>
+      <p class="note" style="margin:10px 0 0">All of it fits. The flyout's scroll height now comes from the screen's work area each time it opens (U9).</p>
+    </section>
+  </div>
+
+  <section class="side" style="margin-top:16px">
+    <h3>Effects: Off</h3>
+    <div class="shot"><img src="261020-ui-after-hud-off.png" alt="After with effects off: the five meter bars, a plain pill, the same layout"></div>
+    <p class="note" style="margin:10px 0 0">The same layout with the plain meter bars. The verdict bar and the panel's backing are unaffected by the effects level.</p>
+  </section>
+
+  <h2>All ten, and how each was checked</h2>
+  <table>
+    <tr><th>#</th><th>Change</th><th>Checked by</th></tr>
+    <tr><td>U1</td><td>One <i>Check connections</i>; status dots</td><td>Screenshot; <code>SettingsViewModel.Check</code> reuses the tested Test / TestRepo</td></tr>
+    <tr><td>U2</td><td>Repository folds to one line</td><td>Screenshot; unit test (summary, URL without token stays open)</td></tr>
+    <tr><td>U3</td><td>2×2 toggle switches; segmented Effects</td><td>Screenshot</td></tr>
+    <tr><td>U4</td><td>Copy/✕ on hover or focus; card context menu</td><td>Screenshot of the resting state. <i>The hover and menu states weren't captured, because synthetic input isn't sent to the desktop.</i></td></tr>
+    <tr><td>U5</td><td>Icon + title + age rows; shelf of 3; +N more</td><td>Screenshot; unit test (three rows, ages, +4 more)</td></tr>
+    <tr><td>U6</td><td>Verdict bar; Close moved to right-click and Settings</td><td>Screenshot; unit test (verdict counts)</td></tr>
+    <tr><td>U7</td><td>Session tab: stars, tally, timeline; any card can come back</td><td>Screenshot; unit tests (timeline order and cap, bringing back an off-shelf card)</td></tr>
+    <tr><td>U8</td><td>Cards | Session switch</td><td>Screenshots of both tabs; unit test (a card that opens the panel shows Cards)</td></tr>
+    <tr><td>U9</td><td>Height capped at the work area; timeline scrolls; bottom-docked pill grows upwards; settings fit the screen</td><td>Screenshots (settings fully visible; long timeline scrolls). <i>The bottom-docked growth wasn't tried by hand; it's on the manual test list.</i></td></tr>
+    <tr><td>U10</td><td>Headline button; Narrator live region; brighter constellation text; a backing behind panel text; high-contrast resources</td><td>Build and screenshots. <i>Not yet tried with Narrator or a high-contrast theme.</i></td></tr>
+  </table>
+</main>
+</body>
+</html>

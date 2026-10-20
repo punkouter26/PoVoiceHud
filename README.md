@@ -1,70 +1,75 @@
 # PoVoiceHud
 
-An always-on-top Windows 11 HUD that listens, transcribes locally with Whisper, and answers in one sentence.
+An always-on-top Windows 11 HUD that fact-checks what is said, as it is said. It transcribes your microphone locally with Whisper. Each sentence that states a fact is checked by `gpt-4.1-mini` on your Azure AI Foundry resource, using Wikipedia articles as evidence. The sentence then turns **green** (correct) or **red** (incorrect), with the reason underneath.
 
-- **Simple mode (default):** your mic only. Declarative statements you say are looked up on Wikipedia and judged by a Llama/cheap model on your Azure AI Foundry project (or local Ollama): `✅ Supported` / `❌ Contradicted` / `⚠️ Unverified` + reason, linking the article it used. Commands, chatter and questions produce no card.
-- **Repo mode (on whenever a repository is set in Settings):** everything Simple mode does, plus the remote call audio and a repository. Questions are answered from it — git history, EF Core schema, ADRs (with staleness check), Azure DevOps pipelines — and a sentence that names a file or entity gets a `[CODE]` card: the model reads those files and says what the code does about it. Cards link into VS Code.
+Audio never leaves the machine. Only the text of claims goes to your Foundry endpoint, and their key words go to Wikipedia's search (switch that off in Settings).
 
-Audio never leaves the machine. Only the spoken text goes to the LLM endpoint you configure, plus the key words of each claim to Wikipedia's search (switch that off in Settings).
+## Using it
 
-## Install
+- **The window** is an ordinary one: drag, resize, snap, minimize, maximize or close it. It stays on top of other windows so it can sit beside a call.
+- **The header:** the microphone with a level meter, the latest verdict or status, and ⚙. Click the microphone, or press **Win+Shift+M** (or the first free one of Ctrl+Shift+M, Ctrl+Alt+M, Ctrl+Shift+F12), to mute. Muting drops anything not yet transcribed. The bar along the header's bottom edge is this session's verdicts as shares of green, red and amber.
+- **Two pages**, switched at the bottom of the window:
+  - **Live:** every sentence as it is heard, one per line. A claim reads *Checking…* while the model works, then is highlighted *Correct* or *Incorrect* with the reason. A specific claim the model cannot settle gets a quiet *Can't tell* note. Questions, requests, opinions, predictions and garbled speech are not claims: they stay plain and dimmed. The page follows the newest line unless you scroll up, and keeps a readable width when the window is wide.
+  - **Facts:** only the claims found correct or incorrect, newest first, each with its reason, its source and when it was said. A claim said twice is one row marked ×2. **Copy facts** puts the list on the clipboard.
+- **Sources:** a link to an article the app looked up itself is marked *(looked up)*. A URL the model wrote is marked *(cited by the model)*, because it may not exist.
+- **Tray icon:** left click hides or shows the HUD. The menu has *Open the history folder*, *Copy diagnostics*, *Check for updates* and *Quit*.
 
-```powershell
-pwsh build/pack.ps1        # → artifacts/releases/PoVoiceHud.App-win-Setup.exe (+ update packages)
-```
+## Settings (⚙)
 
-Setup.exe installs per user (no admin) to `%LOCALAPPDATA%\PoVoiceHud.App` and adds a Start menu shortcut. It is not code-signed, so SmartScreen warns the first time (**More info → Run anyway**). Settings, models and session logs stay in `%LOCALAPPDATA%\PoVoiceHud`, so uninstalling or updating keeps them. Raise `<Version>` in `src/PoVoiceHud.App/PoVoiceHud.App.csproj` before packing a new release. Keep `artifacts/releases` between versions, because Velopack builds small delta updates from the previous release.
+| Setting | |
+|---|---|
+| **Azure AI Foundry endpoint** | `https://<resource>.services.ai.azure.com`. The resource needs a deployment named `gpt-4.1-mini`. |
+| **Key** | Kept in Windows Credential Manager (`PoVoiceHud/FoundryKey`), never in a file. **Check** sends one message and turns the dot green, or says what is wrong (key refused, no such deployment, unreachable). |
+| **Wikipedia look-ups** | On: up to three article intros go to the model as evidence (2.5 s limit; if slow, the model judges alone). Off: nothing goes to Wikipedia. |
+| **Also listen to the call** | Also transcribes the speakers' audio, so the other side of a call is checked too. Lines are then labelled *You* and *Them*. |
+| **Start with Windows** | |
+| **Sounds and animations** | A short cue per verdict and for mute (each under 240 ms, so call capture never transcribes one), and the highlight fading in. Windows' *Animation effects* switch also turns the fade off. |
 
-**Updates:** set `UpdateFeed` in `settings.json` to an https URL or a folder (a network share works) and publish to it with `pwsh build/pack.ps1 -Feed <that folder>`. An installed copy checks the feed at start, downloads a newer version in the background and installs it when the HUD closes. **Check for updates** is also in the tray menu. Copies started with `dotnet run` or from `artifacts/` never update themselves.
+There is no Save button: changes apply when the settings close, without a restart. `%LOCALAPPDATA%\PoVoiceHud\settings.json` holds the above plus three keys for the file only: `WhisperThreads`, `Vocabulary` (comma-separated names Whisper should expect) and `UpdateFeed`.
 
-## Run
+## Files
+
+| | `%LOCALAPPDATA%\PoVoiceHud\` |
+|---|---|
+| Settings | `settings.json` |
+| History | `sessions\{date}.jsonl`: every line heard and every verdict, on this PC only |
+| Logs | `logs\{date}.log` (14 days) and `crash.log`. *Copy diagnostics* zips these with `settings.json` and a machine description, but never the history or the key. |
+| Models | `models\`: `ggml-base.en.bin` (~148 MB) and `silero_vad.onnx`, downloaded on first run and checked against a pinned SHA-256 |
+
+## Build, run, test
 
 ```powershell
 dotnet build PoVoiceHud.sln
-dotnet run --project src/PoVoiceHud.App          # first run downloads ggml-base.en.bin (~148 MB) + silero_vad.onnx
-dotnet run --project src/PoVoiceHud.App -- --pin               # start expanded (Debug builds)
-dotnet run --project src/PoVoiceHud.App -- --demo              # sample cards, no audio (Debug builds)
-dotnet run --project src/PoVoiceHud.App -- --demo --settings   # the settings layout, no audio (Debug builds; add --all to unfold every field)
+dotnet run --project src/PoVoiceHud.App                         # the real app: opens the microphone
+dotnet run --project src/PoVoiceHud.App -- --demo               # a sample conversation, no audio (Debug builds)
+dotnet run --project src/PoVoiceHud.App -- --demo --facts       # the same, on the Facts page
+dotnet run --project src/PoVoiceHud.App -- --demo --settings    # the settings layout
+dotnet test --solution PoVoiceHud.sln                           # 74 tests: 61 unit + 13 integration (models, Credential Manager)
+pwsh build/pack.ps1                                             # Setup.exe + update packages in artifacts/releases (Velopack)
 ```
 
-Build output goes to `artifacts/` (`artifacts/bin/PoVoiceHud.App/debug_win-x64/PoVoiceHud.App.exe`). Both model downloads are checked against a pinned SHA-256.
+Requirements: Windows 11, .NET 10 SDK, a microphone. No GPU is needed. Build output goes to `artifacts/`.
 
-Requirements: Windows 11, .NET 10 SDK, a microphone. No GPU needed (Whisper runs on CPU; base.en ≈ 300 ms per utterance on a modern laptop).
+**Install and update:** Setup.exe installs per user (no admin) to `%LOCALAPPDATA%\PoVoiceHud.App`. It is not code-signed, so SmartScreen warns the first time (**More info → Run anyway**). Raise `<Version>` in `src/PoVoiceHud.App/PoVoiceHud.App.csproj` before packing, and keep `artifacts/releases` between versions for delta updates. With `UpdateFeed` set to an https URL or a folder (publish with `pwsh build/pack.ps1 -Feed <folder>`), an installed copy downloads a newer version in the background and installs it when it closes.
 
-## Configure (⚙ in the pill)
+## How it works
 
-| Setting | Where it lives |
-|---|---|
-| Fact-check provider and model, the optional repository (an Azure DevOps URL or a folder), *Look claims up on Wikipedia*, *Start with Windows*, *Sounds* (`Sounds`), *Effects* (`Effects`: `Full`, `Subtle` or `Off`) | `%LOCALAPPDATA%\PoVoiceHud\settings.json` |
-| `Vocabulary` (comma-separated names Whisper should expect) and `UpdateFeed`: settings.json only, no UI | `%LOCALAPPDATA%\PoVoiceHud\settings.json` |
-| Foundry/Ollama key, Azure DevOps PAT | Windows Credential Manager (`PoVoiceHud/FoundryKey`, `PoVoiceHud/AzDoPat`) |
+`src/PoVoiceHud.Core` has everything testable and never references WinUI. `src/PoVoiceHud.App` is the WinUI 3 window, tray icon and Velopack entry point. `tests/PoVoiceHud.Core.Tests` is xUnit v3.
 
-- **Fact-check model:** once it works it is one line with a **Change…** button. Behind that, pick *Local Ollama* (only a model name is needed; nothing leaves the PC) or *Azure AI Foundry* (resource root `https://<resource>.services.ai.azure.com` + key; the app calls `/models/chat/completions?api-version=2024-05-01-preview`). **Test** sends one message with what is typed. On a first run with nothing configured, a running Ollama is picked up automatically.
-- **Repository (optional):** leave it empty for Simple mode; fill it in for Repo mode. Either an Azure DevOps git URL (`https://dev.azure.com/org/project/_git/repo`, needs the access token) or a folder on this PC that holds a git repository. A URL is cloned into `%LOCALAPPDATA%\PoVoiceHud\repos` and refreshed on every start; a folder is read where it is. **Test repository** checks the connection with what is typed. The organization and project for pipeline status are read from the URL, or from the folder's `origin`.
-- **What leaves the PC in Repo mode:** for a `[CODE]` card, the sentence and up to three matching files (first 6 000 characters each) go to the fact-check model you configured.
-- **No Save button:** changes apply when the settings panel closes — the pipeline is rebuilt in place, no restart. If something typed is invalid, the pill says so and nothing is changed.
-- **Mute:** Win+Shift+M, or the next of Ctrl+Shift+M, Ctrl+Alt+M, Ctrl+Shift+F12 if another program owns it (hover the microphone to see which is live), or click the microphone. Muting drops everything buffered. **Ctrl+Alt+R** checks the last sentence again. Click the pill (or **Ctrl+E**) to open or close the panel; **Esc** closes it.
-- **Session log:** what was heard and answered, and your 👍/👎 on cards, is appended to `%LOCALAPPDATA%\PoVoiceHud\sessions\{date}.jsonl` on this PC.
-- **Wikipedia lookups:** before the model judges a claim, its content words are searched on English Wikipedia (no key) and the top three article intros go to the model as evidence. A link to one of those articles is marked `(looked up)`; a URL the model wrote itself stays `(cited by the model)`. If the lookup fails or is slow (2.5 s limit), the model judges alone. See `docs/adr/0004-wikipedia-evidence.md`.
-- **Who said it:** the transcript labels each line `You:` (the microphone) or `Them:` (the call). When call audio is on, cards carry the same badge.
-- **Card actions:** 👍/👎 records whether the card was right (press again to take it back), ✕ puts the card away, and the copy button copies it. The tally's tooltip shows your ratings for the last 7 days.
-- **Recap:** the **Recap** button next to the transcript, **Ctrl+Alt+S**, or the tray menu writes `sessions\{date}-recap-{time}.md`. It has a summary, decisions, action items and open questions (written by the fact-check model), then the fact checks, repository answers and transcript as they happened. It is also copied to the clipboard and shown as a card that opens the file. It covers the current conversation: everything since a pause of more than 20 minutes or since the last recap. When you mute after a conversation, the pill suggests one. With a cloud model, the transcript of that conversation is sent to it.
-- **Whisper vocabulary:** Whisper is told the repository's names (EF entities, then the words that recur in file names) and any `Vocabulary` words from settings.json, so it writes `TenantId` rather than `tenant ID`. The list refreshes when the repository changes. It is kept to 120 characters, because a prompt adds ~80–100 ms per sentence and longer ones over-steer (`docs/perf.md`). Simple mode with no `Vocabulary` uses no prompt.
-- **Tray icon:** a left click hides or shows the HUD. The right-click menu has mute, recap, the sessions folder, *Start with Windows*, *Check for updates* and quit.
-- **Logs and diagnostics:** `%LOCALAPPDATA%\PoVoiceHud\logs\{date}.log` (kept 14 days) holds starts, settings changes, recaps, updates and every error. **Copy diagnostics** in Settings zips the last week of logs, `crash.log`, `settings.json` and a machine description into `%TEMP%`, puts the zip on the clipboard and shows it in Explorer. Session transcripts and keys are never included.
-- **Local chatter filter:** when the fact-check model is in the cloud and Ollama is running, Ollama's first model sees each sentence first and drops the ones that are not claims, so they never leave the machine. It adds one local call per sentence, so a small model (`ollama pull llama3.2`) keeps it quick; if Ollama is not running the filter is skipped.
-- **Effects and sounds:** *Full* (the default) gives the pill a frosted aurora that follows your voice, a voice ribbon in place of the meter bars, a shockwave in the verdict's colour when a card lands (red ones glitch), a comet round the pill while a sentence is checked, frost on mute that shatters on unmute, sparks for supported claims, 👍 and every tenth weekly 👍, cards that spring in and can be swiped away, and answers that sharpen into focus. *Subtle* keeps those moments without particles, shatter or glitch; *Off* is the plain HUD. Windows' *Animation effects* switch and high contrast turn effects off, and battery saver caps them at *Subtle*. Nothing is drawn while nothing moves. *Sounds* plays a short cue for each verdict, mute/unmute and ratings, each under 240 ms so call-audio capture never transcribes it. The ✦ button next to **Recap** shows the session as a constellation: one star per card, coloured by verdict, sized by confidence, with time running left to right and related claims linked. It also opens after a recap. Hover a star to read it, click it to bring the card back. See `docs/adr/0005-native-gpu-effects.md`.
-- **Always on:** the transcript line and the choices each mode makes (Simple: mic + fact check; Repo: mic + call audio + git, schema, docs and pipelines). There are no switches for these.
+1. `WasapiDualCapture`: 16 kHz mono frames from the mic (and the speakers' loopback when *Also listen to the call* is on).
+2. `SileroVad` + `UtteranceSegmenter`: one utterance per sentence. Anything under 300 ms is dropped, which is why the cues stay shorter.
+3. `WhisperTranscriber`: `base.en` on the CPU. `HudPipeline.Sentences` splits what it heard into sentences (not at initials or titles), and each one is a line on the Live page.
+4. `FactChecker.IsCandidate`: a word-list check sends on only sentences with at least three real words, not only fillers, and not a question or a request.
+5. `FactChecker`: Wikipedia evidence, then `FoundryClient` (`gpt-4.1-mini`, verdict JSON schema, 8 s per attempt, retried on 429/5xx). The sentence travels as JSON data with the two lines before it as context, so speech cannot pass as instructions. The prompt counts opinions, predictions, anecdotes, vague remarks and garbled speech as `not_a_claim`, and those lines stay plain. Verdicts are cached per claim.
+6. `HudViewModel`: the line takes its verdict, and correct and incorrect claims go to Facts.
 
-## Test
+Transcription and checking are separate stages, so a slow model never delays the next line. Muting bumps a generation counter, and anything still in flight is discarded. A settings change disposes the whole container and builds a new one.
 
-```powershell
-dotnet test --solution PoVoiceHud.sln               # 147 tests: 100 unit + 47 integration; only the model-timing ones run alone
-dotnet test --solution PoVoiceHud.sln --coverage    # Microsoft.Testing.Extensions.CodeCoverage
-```
+**Design notes**
 
-Tests tagged `Category=Integration` use real git repositories, Credential Manager or the models; the model ones download Whisper and Silero once into `%LOCALAPPDATA%\PoVoiceHud\models`.
+- **Whisper on the CPU** with a 10 s audio context: `base.en` takes about 300 ms per sentence on 8 threads, with no GPU driver dependency. `tiny.en` was faster but wrong. A vocabulary prompt adds about 80–100 ms, so it is kept to 120 characters.
+- **A fixed cloud model:** `gpt-4.1-mini` answers in about 1–1.5 s and honours the JSON schema. `Llama-3.3-70B-Instruct` was as fast on average but now and then ran past the 8 s limit.
+- **Wikipedia as evidence:** a model judging alone invents sources. With the article intros it cites a page the app fetched itself, which the Facts page can mark *(looked up)*.
+- **A deterministic pre-filter, not an LLM router:** it costs nothing and is easy to test, and the model's `not_a_claim` catches what slips through.
 
-## Layout
-
-`src/PoVoiceHud.Core` — audio, VAD, ASR, router, providers, session log and recap, file logging, view models (no WinUI). `src/PoVoiceHud.App` — WinUI 3 shell, tray icon, Velopack entry point and updates. `build/pack.ps1` — the installer. `tests/PoVoiceHud.Core.Tests` — xUnit v3. See `SPEC.md`, `CAPABILITY-MAP.md`, `docs/adr/`. Working rules for coding agents are in `AGENTS.md`.
+Working rules for coding agents are in `AGENTS.md`; `docs/manual-test.md` is the checklist for what the tests cannot reach.

@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 @AGENTS.md
 
-PoVoiceHud is an always-on-top WinUI 3 HUD (not a web app): it listens, transcribes locally with Whisper, and fact-checks or answers in one sentence. `README.md` has the user-facing overview; `SPEC.md`, `CAPABILITY-MAP.md` and `docs/` have the design.
+PoVoiceHud is an always-on-top WinUI 3 HUD (not a web app): it transcribes what is said with Whisper and fact-checks each claim as it goes, highlighting the sentence green or red. `README.md` is the one document: use, settings, files, and how it works with the design decisions behind it. `docs/manual-test.md` is the checklist for what tests cannot reach.
 
 ## Repo facts
 
 - The only branch is `main`. Where `AGENTS.md` says "master", that means `main`.
 - Commits stay local: no remote is used for this project unless the owner says otherwise.
-- `src/PoVoiceHud.Core` holds everything testable (audio, VAD, ASR, routing, providers, view models) and never references WinUI. `src/PoVoiceHud.App` is the XAML shell. `tests/PoVoiceHud.Core.Tests` is xUnit v3 on Microsoft.Testing.Platform.
+- `src/PoVoiceHud.Core` holds everything testable (audio, VAD, ASR, the fact checker, view models) and never references WinUI. `src/PoVoiceHud.App` is the XAML shell. `tests/PoVoiceHud.Core.Tests` is xUnit v3 on Microsoft.Testing.Platform.
 - Build output is in `artifacts/`, not `bin/` and `obj/`.
 - Warnings are errors, with analyzers at `latest-recommended`. Rules that are switched off are listed with their reason in `.editorconfig`; add to that list rather than suppressing inline.
 
@@ -19,29 +19,28 @@ PoVoiceHud is an always-on-top WinUI 3 HUD (not a web app): it listens, transcri
 ```powershell
 dotnet build PoVoiceHud.sln
 dotnet test --solution PoVoiceHud.sln                                      # everything, about 10 s
-dotnet test --project tests/PoVoiceHud.Core.Tests -- --filter-class "*FactCheckProviderTests"   # one class
+dotnet test --project tests/PoVoiceHud.Core.Tests -- --filter-class "*FactCheckerTests"   # one class
 dotnet run --project src/PoVoiceHud.App                                    # the real app: opens the microphone
-dotnet run --project src/PoVoiceHud.App -- --demo                          # sample cards, no audio (Debug)
-dotnet run --project src/PoVoiceHud.App -- --demo --settings               # the settings layout, no audio (Debug; --all unfolds every field)
-dotnet run --project src/PoVoiceHud.App -- --demo --fx supported          # play one effect and hold a frame (Debug; see MainWindow.Preview; --effects Off|Subtle|Full)
+dotnet run --project src/PoVoiceHud.App -- --demo                          # a sample conversation, no audio (Debug)
+dotnet run --project src/PoVoiceHud.App -- --demo --facts                  # the same, on the Facts page (Debug)
+dotnet run --project src/PoVoiceHud.App -- --demo --settings               # the settings layout, no audio (Debug)
 pwsh build/pack.ps1                                                        # Setup.exe + update packages in artifacts/releases (Velopack)
 ```
 
-## How a sentence becomes a card
+## How a sentence becomes a highlight
 
-- **Pipeline** (`HudPipeline`): audio frames → `SileroVad` + `UtteranceSegmenter` → Whisper → `Router`. Transcription and routing are two separate channel stages, so a slow LLM call never delays the next transcription. Muting increments a generation counter; work already in flight is thrown away when it finishes.
-- **Router**: `NoiseFilter` → `IntentClassifier` (keyword intents, masked by `Settings.EnabledSources`) → `SymbolMatcher` against the workspace index. A sentence that names a repository symbol and that no keyword source claimed goes to `Code`, not `FactCheck`. Other declarative sentences go to `FactCheck`. Matching providers run in parallel and their answers are ranked by confidence. A provider that throws is logged and skipped.
-- **Providers** implement `IInsightProvider` (`Handles` is an `Intent` flag; return null for "nothing to say"). All wiring is in `ServiceCollectionExtensions.AddPoVoiceHudCore`. A provider that is missing its configuration is registered as `UnconfiguredProvider`, which says why, rather than being left out. `FoundryClient` talks to both Azure AI Foundry and Ollama; when the main model is in the cloud and Ollama is running, a local Ollama model screens out chatter first.
-- **Modes** are presets in `Settings.ApplyMode`: Simple is mic + FactCheck; Repo is mic and call audio + every source.
-- **Settings changes** (`App.ApplyAsync`): the whole DI container is disposed and `StartAsync` builds a new one. A run counter stops a slower, older start from installing its pipeline. The only state is `settings.json` and Credential Manager (`CredentialStore`); for secrets, follow the existing Credential Manager pattern.
-- **Effects** (`App/Fx`, ADR-0005): `HudEffects` reacts to `HudViewModel` (`Arrived`, `IsChecking`, `IsMuted`, `MicLevel`, `Rated`, `Milestone`) and draws ComputeSharp shaders with Win2D, on a timer that stops when nothing moves. `Motion` holds the Composition animations, and `Core/Fx` holds the physics. Sounds are `Core/Audio/SoundPalette`, every cue ≤ 240 ms. `Effects`/`Sounds` changes apply without rebuilding the pipeline.
-- **Design decisions**, with their reasons, are in `docs/adr/` (CPU Whisper, a deterministic router rather than an LLM one, fact-checking on Foundry, Wikipedia evidence, native GPU effects).
+- **Pipeline** (`HudPipeline`): audio frames → `SileroVad` + `UtteranceSegmenter` → Whisper → `Sentences` (one line each) → `FactChecker`. Transcription and checking are two separate channel stages, so a slow model call never delays the next line. `Checking` says when a line is queued for the checker and when it is done; `Verdicts` carries each verdict with its line. Muting increments a generation counter; work already in flight is thrown away when it finishes.
+- **FactChecker**: `IsCandidate` (word lists: three real words, not fillers, not a question or request) → Wikipedia evidence → `FoundryClient` → a verdict, or null for `not_a_claim`. Every failure is a "can't tell" that says why. `FoundryClient.Model` is fixed (`gpt-4.1-mini`) and the reply is held to a JSON schema.
+- **Words**: the `Verdict` enum keeps the model's terms (Supported, Contradicted, Unverified); everything a person reads uses `Verdict.Label()`: Correct, Incorrect, Can't tell.
+- **View models**: `HudViewModel` holds `Live` (`LiveLineViewModel`: Heard → Checking → Correct / Incorrect / CantTell) and `Facts` (`FactViewModel`, correct and incorrect only, newest first, repeats counted). The window is a standard one (title bar, resizable, kept on top); the pages fill it.
+- **Wiring** is all in `ServiceCollectionExtensions.AddPoVoiceHudCore`. Without an endpoint and key the checker still runs and says what to set up.
+- **Settings changes** (`App.ApplyAsync`): the whole DI container is disposed and `StartAsync` builds a new one, unless only Sounds or Start with Windows changed. A run counter stops a slower, older start from installing its pipeline. The only state is `settings.json` and Credential Manager (`CredentialStore`); for secrets, follow the existing Credential Manager pattern.
+- **Feedback**: `SoundPalette` cues (each ≤ 240 ms, under the segmenter's 300 ms floor) and a `BrushTransition` on the highlight, both under the one *Sounds and animations* switch. There are no shaders or particle effects any more.
 
 ## Checking a UI change
 
-The app is a desktop window, so the browser tools cannot drive it, and a settings flyout only opens for the foreground window. Use the two `--demo` forms above and capture the window; do not send synthetic keys or clicks to the desktop, because the owner is usually working on it. Running without `--demo` opens the microphone and appends what it hears to `%LOCALAPPDATA%\PoVoiceHud\sessions`.
+The app is a desktop window, so the browser tools cannot drive it, and a settings flyout only opens for the foreground window. Use the `--demo` forms above and capture the window; do not send synthetic keys or clicks to the desktop, because the owner is usually working on it. Running without `--demo` opens the microphone and appends what it hears to `%LOCALAPPDATA%\PoVoiceHud\sessions`.
 
 ## Limits worth knowing
 
-- 100 unit tests and 50 integration tests at most (`[Trait("Category", "Integration")]` marks the latter). The suite is at 100 and 47.
-- The Azure DevOps provider has never been run against a live organization.
+- 100 unit tests and 50 integration tests at most (`[Trait("Category", "Integration")]` marks the latter). The suite is at 61 and 13.
