@@ -23,16 +23,29 @@ public static partial class SymbolMatcher
         var spoken = Tokens(text).ToHashSet();
         if (spoken.Count == 0) return [];
 
+        // Names share tokens ("service", "controller"), so each one is fuzzy-matched against the sentence only once.
+        var heardCache = new Dictionary<string, bool>();
+        bool Heard(string token)
+        {
+            if (!heardCache.TryGetValue(token, out var heard))
+                heardCache[token] = heard = spoken.Contains(token) || spoken.Any(s => Similar(token, s));
+            return heard;
+        }
+
         var matches = new List<SymbolMatch>();
         foreach (var symbol in index.Symbols)
         {
             if (symbol.Tokens.Length == 0) continue;
-            var heard = symbol.Tokens.Count(n => spoken.Contains(n) || spoken.Any(s => Similar(n, s)));
+            var heard = symbol.Tokens.Count(Heard);
             var score = (double)heard / symbol.Tokens.Length;
             if (score >= 0.5) matches.Add(new SymbolMatch(symbol, score));
         }
         return matches.OrderByDescending(m => m.Score).ThenByDescending(m => m.Symbol.Name.Length).Take(5).ToList();
     }
+
+    /// <summary>The symbols worth researching: files and entities the sentence clearly names.</summary>
+    public static IEnumerable<SymbolMatch> Mentions(IEnumerable<SymbolMatch> symbols) =>
+        symbols.Where(m => m.Score >= Strong && m.Symbol.Kind is SymbolKind.File or SymbolKind.Entity);
 
     /// <summary>Camel-case / punctuation split, lower-cased, single characters dropped.</summary>
     public static IEnumerable<string> Tokens(string text) =>

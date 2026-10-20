@@ -53,7 +53,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         (_original, _readSecret, _writeSecret, _pickFolder, _save, _connect) = (settings, readSecret, writeSecret, pickFolder, save, connect);
         _ollamaModel = ollamaModel ?? (() => null);
-        _provider = IsLocal(settings.FoundryEndpoint) ? Ollama : Foundry;
+        _provider = FoundryClient.IsLocal(settings.FoundryEndpoint) ? Ollama : Foundry;
         _repoPath = settings.RepoPath;
         _foundryEndpoint = settings.FoundryEndpoint;
         _foundryModel = settings.FoundryModel;
@@ -77,7 +77,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>What stopped the last <see cref="Apply"/>, for showing once the settings are no longer on screen.</summary>
     public string? Problem => FoundryError ?? RepoError;
 
-    private bool ModelIsSetUp => FoundryClient.IsValidEndpoint(FoundryEndpoint) && (IsLocal(FoundryEndpoint) || HasFoundryKey);
+    private bool ModelIsSetUp => FoundryClient.IsReady(FoundryEndpoint, HasFoundryKey);
 
     /// <summary>A repository means Repo mode; a change of mode takes that mode's audio input and sources.</summary>
     public Settings ToSettings()
@@ -110,11 +110,11 @@ public sealed partial class SettingsViewModel : ObservableObject
         if (value == Ollama)
         {
             FoundryEndpoint = FoundryClient.OllamaEndpoint.ToString();
-            FoundryModel = IsLocal(_original.FoundryEndpoint) ? _original.FoundryModel : _ollamaModel() ?? FoundryClient.OllamaDefaultModel;
+            FoundryModel = FoundryClient.IsLocal(_original.FoundryEndpoint) ? _original.FoundryModel : _ollamaModel() ?? FoundryClient.OllamaDefaultModel;
         }
         else
         {
-            var saved = !IsLocal(_original.FoundryEndpoint);
+            var saved = !FoundryClient.IsLocal(_original.FoundryEndpoint);
             FoundryEndpoint = saved ? _original.FoundryEndpoint : null;
             FoundryModel = saved ? _original.FoundryModel : new Settings().FoundryModel;
         }
@@ -203,12 +203,10 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     private bool Store(string name, string value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return false;
-        _writeSecret(name, value.Trim());
+        if (Blank(value) is not { } secret) return false;
+        _writeSecret(name, secret);
         return true;
     }
-
-    private static bool IsLocal(string? endpoint) => Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) && uri.IsLoopback;
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

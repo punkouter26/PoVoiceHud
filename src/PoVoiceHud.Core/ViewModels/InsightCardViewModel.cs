@@ -44,13 +44,7 @@ public sealed class InsightCardViewModel
     public bool HasJumps => Jumps.Count > 0;
 
     /// <summary>"❌ Python was created by Dennis Ritchie ×2" for a verdict, "[SCHEMA] Inspection.TenantId" for the other sources.</summary>
-    public string Summary => (Verdict switch
-    {
-        Providers.Verdict.Supported => $"✅ {Title}",
-        Providers.Verdict.Contradicted => $"❌ {Title}",
-        Providers.Verdict.Unverified => $"⚠️ {Title}",
-        _ => _insight.Headline,
-    }) + (Count > 1 ? $" ×{Count}" : "");
+    public string Summary => (Verdict is { } verdict ? $"{verdict.Emoji()} {Title}" : _insight.Headline) + (Count > 1 ? $" ×{Count}" : "");
 
     /// <summary>The same sentence or subject coming up again (headlines are compared, ignoring case).</summary>
     public bool IsSameAs(Insight other) => string.Equals(_insight.Headline, other.Headline, StringComparison.OrdinalIgnoreCase);

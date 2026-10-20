@@ -15,8 +15,11 @@ public static partial class RepoSource
     public static string CacheDir { get; } = Path.Combine(Config.AppPaths.DataDir, "repos");
 
     /// <summary>An https git URL. Plain http is refused: the access token travels with every request.</summary>
-    public static bool IsRemote(string? location) =>
-        Uri.TryCreate(location, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps;
+    public static bool IsRemote(string? location) => IsHttps(location, out _);
+
+    /// <summary>A PAT is a password: it only ever goes to an https URL.</summary>
+    public static bool IsHttps(string? url, out Uri uri) =>
+        Uri.TryCreate(url, UriKind.Absolute, out uri!) && uri.Scheme == Uri.UriSchemeHttps;
 
     /// <summary>A folder or an https URL — the two things the Repository setting accepts.</summary>
     public static bool IsValid(string? location) =>

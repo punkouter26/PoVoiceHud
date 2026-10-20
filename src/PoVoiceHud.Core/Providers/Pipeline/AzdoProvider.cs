@@ -20,7 +20,7 @@ public sealed class AzdoProvider(IBuildClient client, Func<string?> repoRoot, Re
         IReadOnlyList<BuildRun> runs;
         try
         {
-            runs = await _pipeline.ExecuteAsync(async token => await client.GetRecentBuildsAsync(branch, 3, token), ct);
+            runs = await _pipeline.ExecuteAsync(async token => await client.GetRecentBuildsAsync(branch, 1, token), ct);
         }
         catch (HttpRequestException e) when (e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {

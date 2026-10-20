@@ -48,7 +48,6 @@ public sealed class DocsProvider(Func<string?> repoRoot) : IInsightProvider
     private static DateTimeOffset? LastChange(Repository repo, string path)
     {
         if (repo.Head.Tip?.Tree[path] is null) return null;   // never existed or deleted: nothing to compare
-        return repo.Commits.QueryBy(path, new CommitFilter { SortBy = CommitSortStrategies.Topological })
-            .FirstOrDefault()?.Commit.Author.When;
+        return Git.GitProvider.FileLog(repo, path).FirstOrDefault()?.Commit.Author.When;
     }
 }

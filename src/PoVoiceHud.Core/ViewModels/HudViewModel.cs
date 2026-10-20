@@ -105,10 +105,10 @@ public sealed partial class HudViewModel(TimeSpan autoExpand, string? repoRoot, 
             _counts[(mine, verdict)] = _counts.GetValueOrDefault((mine, verdict)) + 1;
         if (_counts.Count == 0) return;
 
-        string Line(Func<bool, bool> who) => string.Join("  ", new[] { (Verdict.Supported, "✅"), (Verdict.Contradicted, "❌"), (Verdict.Unverified, "⚠️") }
-            .Select(v => (v.Item2, Count: _counts.Where(t => t.Key.Verdict == v.Item1 && who(t.Key.Mine)).Sum(t => t.Value)))
+        string Line(Func<bool, bool> who) => string.Join("  ", Enum.GetValues<Verdict>()
+            .Select(v => (Verdict: v, Count: _counts.Where(t => t.Key.Verdict == v && who(t.Key.Mine)).Sum(t => t.Value)))
             .Where(v => v.Count > 0)
-            .Select(v => $"{v.Item1} {v.Count}"));
+            .Select(v => $"{v.Verdict.Emoji()} {v.Count}"));
 
         Tally = Line(_ => true);
         TallyDetail = $"This session — you: {Or(Line(m => m))} · the call: {Or(Line(m => !m))}";

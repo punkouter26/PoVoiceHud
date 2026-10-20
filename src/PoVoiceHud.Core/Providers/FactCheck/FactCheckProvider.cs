@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Globalization;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using PoVoiceHud.Core.Routing;
 
@@ -23,7 +22,8 @@ public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gat
 
     private const string Unreadable = "could not read the model's answer.";
     private const int CacheSize = 200;
-    private static readonly JsonSerializerOptions Readable = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    private const string NotAClaim = "not_a_claim";
+    private static readonly string Unverified = $"{Verdict.Unverified.Emoji()} {Verdict.Unverified}";
 
     // Verdicts by lower-cased claim, so a repeated sentence costs no second call. Null = "not a claim".
     private readonly ConcurrentDictionary<string, Insight?> _cache = new();
@@ -36,13 +36,13 @@ public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gat
         var headline = $"[FACT] {(claim.Length <= 60 ? claim : claim[..57] + "…")}";
 
         if (model is null)
-            return Card(headline, "⚠️ Unverified (no LLM configured) — add a fact-check model in Settings.", 0.5);
+            return Card(headline, $"{Unverified} (no LLM configured) — add a fact-check model in Settings.", 0.5);
 
         var key = claim.ToLowerInvariant();
         if (!query.Fresh && _cache.TryGetValue(key, out var cached)) return cached;
 
         // JSON-encoding the transcript keeps it unmistakably data: remote call audio is untrusted speech.
-        var user = JsonSerializer.Serialize(new { context = query.Context ?? [], statement = claim }, Readable);
+        var user = PromptJson.Serialize(new { context = query.Context ?? [], statement = claim });
 
         string raw;
         try
@@ -53,23 +53,23 @@ public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gat
         catch (HttpRequestException e)
         {
             var status = e.StatusCode is { } code ? ((int)code).ToString(CultureInfo.InvariantCulture) : "network";
-            return Card(headline, $"⚠️ Unverified — fact-check service unavailable ({status}).", 0.4);
+            return Card(headline, $"{Unverified} — fact-check service unavailable ({status}).", 0.4);
         }
         catch (TimeoutException)
         {
-            return Card(headline, "⚠️ Unverified — the fact-check model took too long to answer.", 0.4);
+            return Card(headline, $"{Unverified} — the fact-check model took too long to answer.", 0.4);
         }
 
         var (verdict, reason, source) = Parse(raw);
-        if (verdict.Replace(' ', '_') == "not_a_claim") return Remember(key, null);   // nothing to show for chatter or commands
-        var (prefix, confidence, outcome) = verdict switch
+        if (verdict == NotAClaim) return Remember(key, null);   // nothing to show for chatter or commands
+        var (outcome, confidence) = verdict switch
         {
-            "supported" => ("✅ Supported", 0.9, Verdict.Supported),
-            "contradicted" => ("❌ Contradicted", 0.9, Verdict.Contradicted),
-            _ => ("⚠️ Unverified", 0.6, Verdict.Unverified),
+            "supported" => (Verdict.Supported, 0.9),
+            "contradicted" => (Verdict.Contradicted, 0.9),
+            _ => (Verdict.Unverified, 0.6),
         };
         var link = Uri.TryCreate(source, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" ? uri : null;
-        return Remember(key, new Insight(Intent.FactCheck, headline, $"{prefix} — {reason}", [], confidence, Link: link, Verdict: outcome));
+        return Remember(key, new Insight(Intent.FactCheck, headline, $"{outcome.Emoji()} {outcome} — {reason}", [], confidence, Link: link, Verdict: outcome));
     }
 
     private static Insight Card(string headline, string answer, double confidence) =>
@@ -80,7 +80,7 @@ public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gat
     {
         try
         {
-            return Parse(await gate.CompleteAsync(SystemPrompt, user, ct)).Verdict.Replace(' ', '_') == "not_a_claim";
+            return Parse(await gate.CompleteAsync(SystemPrompt, user, ct)).Verdict == NotAClaim;
         }
         catch (Exception e) when (e is HttpRequestException or TimeoutException)
         {
@@ -107,7 +107,7 @@ public sealed class FactCheckProvider(ILanguageModel? model, ILanguageModel? gat
             using var doc = JsonDocument.Parse(raw[start..(end + 1)]);
             var root = doc.RootElement;
             return (
-                root.TryGetProperty("verdict", out var v) ? (v.GetString() ?? "").Trim().ToLowerInvariant() : "unverified",
+                root.TryGetProperty("verdict", out var v) ? (v.GetString() ?? "").Trim().ToLowerInvariant().Replace(' ', '_') : "unverified",
                 root.TryGetProperty("reason", out var r) ? (r.GetString() ?? "").Trim() : "no reason given.",
                 root.TryGetProperty("source", out var s) ? s.GetString() : null);
         }

@@ -40,10 +40,13 @@ public sealed class GitProvider(Func<string?> repoRoot) : IInsightProvider
     public static IReadOnlyList<CommitInfo> History(string root, string relativePath)
     {
         using var repo = new Repository(root);
-        // Topological order keeps FileHistory stable when commit dates are not monotonic (rebases, clock skew).
-        return repo.Commits.QueryBy(relativePath, new CommitFilter { SortBy = CommitSortStrategies.Topological })
+        return FileLog(repo, relativePath)
             .Take(5)
             .Select(e => new CommitInfo(e.Commit.Sha[..7], e.Commit.Author.Name, e.Commit.Author.When, e.Commit.MessageShort))
             .ToList();
     }
+
+    /// <summary>Commits touching a path, newest first. Topological order stays stable when commit dates are not monotonic (rebases, clock skew).</summary>
+    internal static IEnumerable<LogEntry> FileLog(Repository repo, string path) =>
+        repo.Commits.QueryBy(path, new CommitFilter { SortBy = CommitSortStrategies.Topological });
 }

@@ -14,16 +14,17 @@ public sealed class SchemaProvider(Func<string?> repoRoot) : IInsightProvider
     public Task<Insight?> QueryAsync(Query query, CancellationToken ct)
     {
         var root = repoRoot();
-        var candidates = query.Symbols.Where(m => m.Score >= SymbolMatcher.Strong && m.Symbol.Kind == SymbolKind.Entity).ToList();
+        var candidates = SymbolMatcher.Mentions(query.Symbols).Where(m => m.Symbol.Kind == SymbolKind.Entity).ToList();
         if (root is null || candidates.Count == 0) return Task.FromResult<Insight?>(null);
 
         var spoken = SymbolMatcher.Tokens(query.Text).ToHashSet();
         // Subject = the entity whose column covers the most spoken tokens ("tenant id" → Inspection.TenantId beats Tenant.Id),
         // falling back to the entity named earliest in the sentence.
         var best = candidates
-            .Select(m => (Match: m, Entity: Load(root, m.Symbol.Path).Entities.FirstOrDefault(e => e.Name == m.Symbol.Name)))
+            .Select(m => (Match: m, Model: Load(root, m.Symbol)))
+            .Select(x => (x.Match, x.Model, Entity: x.Model.Entities.FirstOrDefault(e => e.Name == x.Match.Symbol.Name)))
             .Where(x => x.Entity is not null)
-            .Select(x => (x.Match, Entity: x.Entity!, Column: x.Entity!.Columns
+            .Select(x => (x.Match, x.Model, Entity: x.Entity!, Column: x.Entity!.Columns
                 .Select(c => (Column: c, Covered: Coverage(spoken, c.Name)))
                 .Where(c => c.Covered > 0)
                 .OrderByDescending(c => c.Covered)
@@ -34,8 +35,7 @@ public sealed class SchemaProvider(Func<string?> repoRoot) : IInsightProvider
             .FirstOrDefault();
         if (best.Entity is null) return Task.FromResult<Insight?>(null);
 
-        var (match, entity, column) = best;
-        var model = Load(root, match.Symbol.Path);
+        var (match, model, entity, column) = best;
         var (headline, answer, line) = column is null
             ? ($"[SCHEMA] {entity.Name}", Summary(entity, model), entity.Line)
             : ($"[SCHEMA] {entity.Name}.{column.Name}", Describe(query.Text, entity, column, model), column.Line);
@@ -88,14 +88,14 @@ public sealed class SchemaProvider(Func<string?> repoRoot) : IInsightProvider
     private static string TableOf(SchemaModel model, string entityName) =>
         model.Entities.FirstOrDefault(e => e.Name == entityName)?.Table ?? entityName;
 
-    private SchemaModel Load(string root, string relativePath)
+    private SchemaModel Load(string root, Symbol snapshot)
     {
-        var path = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        var path = snapshot.AbsolutePath(root);
         var stamp = File.GetLastWriteTimeUtc(path);
         lock (_cache)
         {
             if (_cache.TryGetValue(path, out var cached) && cached.Stamp == stamp) return cached.Model;
-            var model = EfSnapshotParser.Parse(File.ReadAllText(path), relativePath);
+            var model = EfSnapshotParser.Parse(File.ReadAllText(path), snapshot.Path);
             _cache[path] = (stamp, model);
             return model;
         }

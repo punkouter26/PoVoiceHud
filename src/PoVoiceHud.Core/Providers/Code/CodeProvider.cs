@@ -23,14 +23,10 @@ public sealed class CodeProvider(Func<string?> repoRoot, ILanguageModel? model) 
 
     public Intent Handles => Intent.Code;
 
-    /// <summary>The symbols worth researching: files and entities the sentence clearly names.</summary>
-    public static IEnumerable<SymbolMatch> Mentions(IEnumerable<SymbolMatch> symbols) =>
-        symbols.Where(m => m.Score >= SymbolMatcher.Strong && m.Symbol.Kind is SymbolKind.File or SymbolKind.Entity);
-
     public async Task<Insight?> QueryAsync(Query query, CancellationToken ct)
     {
         if (repoRoot() is not { } root) return null;
-        var files = Mentions(query.Symbols)
+        var files = SymbolMatcher.Mentions(query.Symbols)
             .Select(m => m.Symbol)
             .DistinctBy(s => s.Path, StringComparer.OrdinalIgnoreCase)
             .Where(s => File.Exists(s.AbsolutePath(root)))
@@ -45,11 +41,8 @@ public sealed class CodeProvider(Func<string?> repoRoot, ILanguageModel? model) 
 
         var excerpts = new List<object>();
         foreach (var file in files)
-        {
-            var text = await File.ReadAllTextAsync(file.AbsolutePath(root), ct);
-            excerpts.Add(new { path = file.Path, text = text.Length <= MaxCharsPerFile ? text : text[..MaxCharsPerFile] });
-        }
-        var user = System.Text.Json.JsonSerializer.Serialize(new { said = query.Text, context = query.Context ?? [], files = excerpts });
+            excerpts.Add(new { path = file.Path, text = await HeadAsync(file.AbsolutePath(root), ct) });
+        var user = PromptJson.Serialize(new { said = query.Text, context = query.Context ?? [], files = excerpts });
 
         try
         {
@@ -61,5 +54,14 @@ public sealed class CodeProvider(Func<string?> repoRoot, ILanguageModel? model) 
         {
             return pointer;   // the files are still worth showing when the model is down
         }
+    }
+
+    /// <summary>Reads only the part that is sent: an EF model snapshot can run to megabytes.</summary>
+    private static async Task<string> HeadAsync(string path, CancellationToken ct)
+    {
+        using var reader = new StreamReader(path);
+        var buffer = new char[MaxCharsPerFile];
+        var read = await reader.ReadBlockAsync(buffer, ct);
+        return new string(buffer, 0, read);
     }
 }

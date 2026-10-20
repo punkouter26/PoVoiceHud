@@ -52,6 +52,12 @@ public sealed class FoundryClient(HttpClient http, Uri endpoint, string model, s
     public static bool IsValidEndpoint(string? endpoint) =>
         Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) && (uri.Scheme == "https" || (uri.Scheme == "http" && uri.IsLoopback));
 
+    /// <summary>A loopback endpoint such as local Ollama: it needs no key and keeps every sentence on the machine.</summary>
+    public static bool IsLocal(string? endpoint) => Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) && uri.IsLoopback;
+
+    /// <summary>Usable as configured: a valid endpoint, and a key unless it is local.</summary>
+    public static bool IsReady(string? endpoint, bool hasKey) => IsValidEndpoint(endpoint) && (hasKey || IsLocal(endpoint));
+
     public static Uri Resolve(Uri endpoint) =>
         endpoint.AbsolutePath is "" or "/" ? new Uri(endpoint, $"/models/chat/completions?api-version={ApiVersion}") : endpoint;
 

@@ -1,8 +1,10 @@
-# PoVoiceHud
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 @AGENTS.md
 
-An always-on-top WinUI 3 HUD (not a web app): it listens, transcribes locally with Whisper, and fact-checks or answers in one sentence. `README.md` has the user-facing overview; `SPEC.md`, `CAPABILITY-MAP.md` and `docs/` have the design.
+PoVoiceHud is an always-on-top WinUI 3 HUD (not a web app): it listens, transcribes locally with Whisper, and fact-checks or answers in one sentence. `README.md` has the user-facing overview; `SPEC.md`, `CAPABILITY-MAP.md` and `docs/` have the design.
 
 ## Repo facts
 
@@ -22,6 +24,15 @@ dotnet run --project src/PoVoiceHud.App                                    # the
 dotnet run --project src/PoVoiceHud.App -- --demo                          # sample cards, no audio (Debug)
 dotnet run --project src/PoVoiceHud.App -- --demo --settings               # the settings layout, no audio (Debug; --all unfolds every field)
 ```
+
+## How a sentence becomes a card
+
+- **Pipeline** (`HudPipeline`): audio frames → `SileroVad` + `UtteranceSegmenter` → Whisper → `Router`. Transcription and routing are two separate channel stages, so a slow LLM call never delays the next transcription. Muting increments a generation counter; work already in flight is thrown away when it finishes.
+- **Router**: `NoiseFilter` → `IntentClassifier` (keyword intents, masked by `Settings.EnabledSources`) → `SymbolMatcher` against the workspace index. A sentence that names a repository symbol and that no keyword source claimed goes to `Code`, not `FactCheck`. Other declarative sentences go to `FactCheck`. Matching providers run in parallel and their answers are ranked by confidence. A provider that throws is logged and skipped.
+- **Providers** implement `IInsightProvider` (`Handles` is an `Intent` flag; return null for "nothing to say"). All wiring is in `ServiceCollectionExtensions.AddPoVoiceHudCore`. A provider that is missing its configuration is registered as `UnconfiguredProvider`, which says why, rather than being left out. `FoundryClient` talks to both Azure AI Foundry and Ollama; when the main model is in the cloud and Ollama is running, a local Ollama model screens out chatter first.
+- **Modes** are presets in `Settings.ApplyMode`: Simple is mic + FactCheck; Repo is mic and call audio + every source.
+- **Settings changes** (`App.ApplyAsync`): the whole DI container is disposed and `StartAsync` builds a new one. A run counter stops a slower, older start from installing its pipeline. The only state is `settings.json` and Credential Manager (`CredentialStore`); for secrets, follow the existing Credential Manager pattern.
+- **Design decisions**, with their reasons, are in `docs/adr/` (CPU Whisper, a deterministic router rather than an LLM one, fact-checking on Foundry).
 
 ## Checking a UI change
 

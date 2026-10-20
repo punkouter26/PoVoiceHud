@@ -150,12 +150,14 @@ public sealed class HudPipeline : IDisposable
         {
             await foreach (var (line, generation, fresh) in _routing.Reader.ReadAllAsync(_cts.Token))
             {
-                var busy = _router.Plan(line.Text) != Intent.None;
-                if (busy) _checking.Writer.TryWrite(true);
+                var busy = false;
                 try
                 {
+                    var plan = _router.Plan(line.Text);
+                    busy = plan.Intents != Intent.None;
+                    if (busy) _checking.Writer.TryWrite(true);
                     var context = recent.Where(t => t != line.Text).ToArray();
-                    var insights = await _router.RouteAsync(line.Text, context, fresh, _cts.Token);
+                    var insights = await _router.RouteAsync(plan, context, fresh, _cts.Token);
                     if (generation == Volatile.Read(ref _generation) && insights.Count > 0) _insights.Writer.TryWrite(new Routed(line, insights));
                 }
                 catch (Exception e) when (!_cts.IsCancellationRequested)
