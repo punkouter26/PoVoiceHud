@@ -14,5 +14,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Polly.Core" />
+    <PackageReference Include="LibGit2Sharp" />
+    <PackageReference Include="Raffinert.FuzzySharp" />
   </ItemGroup>
 </Project>

@@ -12,7 +12,7 @@ public class SettingsStoreTests : IDisposable
     {
         var s = new Settings
         {
-            FoundryEndpoint = "https://acme.services.ai.azure.com", LookUpClaims = false, ListenToCall = true, StartWithWindows = true,
+            FoundryEndpoint = "https://acme.services.ai.azure.com", LookUpClaims = false, StartWithWindows = true,
             Sounds = false, WhisperThreads = 4, Vocabulary = "Contoso, PMIS", UpdateFeed = @"\\share\PoVoiceHud\releases",
         };
 
@@ -21,17 +21,15 @@ public class SettingsStoreTests : IDisposable
 
         Assert.Equal(s, loaded);
         Assert.Null(warning);
-        Assert.DoesNotContain("AudioInput", File.ReadAllText(File_));   // derived from ListenToCall, not stored
     }
 
     [Fact]
-    public void Missing_file_gives_defaults_mic_only_with_wikipedia_and_sounds()
+    public void Missing_file_gives_defaults_with_wikipedia_and_sounds()
     {
         var (loaded, warning) = SettingsStore.Load(File_);
 
         Assert.Equal(new Settings(), loaded);
         Assert.Null(warning);
-        Assert.Equal(AudioInput.Mic, loaded.AudioInput);
         Assert.True(loaded.LookUpClaims && loaded.Sounds);
         Assert.InRange(loaded.WhisperThreads, 2, 8);
     }
@@ -40,13 +38,12 @@ public class SettingsStoreTests : IDisposable
     public void A_file_from_an_older_version_loads_and_keys_that_are_gone_are_ignored()
     {
         Directory.CreateDirectory(_dir);
-        File.WriteAllText(File_, """{ "Mode": "Repo", "RepoPath": "C:\\src\\pmis", "FoundryModel": "Llama-3.3-70B-Instruct", "FoundryEndpoint": "https://acme.services.ai.azure.com", "Effects": "Full", "AudioInput": "Both" }""");
+        File.WriteAllText(File_, """{ "Mode": "Repo", "RepoPath": "C:\\src\\pmis", "FoundryModel": "Llama-3.3-70B-Instruct", "FoundryEndpoint": "https://acme.services.ai.azure.com", "Effects": "Full", "AudioInput": "Mic", "ListenToCall": false }""");
 
         var (loaded, warning) = SettingsStore.Load(File_);
 
         Assert.Null(warning);
         Assert.Equal("https://acme.services.ai.azure.com", loaded.FoundryEndpoint);
-        Assert.True(loaded.ListenToCall);   // the old way of saying "also listen to the call" carries over
     }
 
     [Fact]

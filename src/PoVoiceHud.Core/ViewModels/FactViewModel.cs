@@ -15,11 +15,11 @@ public sealed partial class FactViewModel : ObservableObject
     /// <summary>When it was last said, as a clock time: a repeat moves the row to the top, so it shows the repeat's time.</summary>
     [ObservableProperty] private string _time;
 
-    public FactViewModel(Insight insight, DateTimeOffset at, SourceHint source, bool showSpeaker, Func<Uri, Task> openUri)
+    public FactViewModel(Insight insight, DateTimeOffset at, SourceHint source, Func<Uri, Task> openUri)
     {
         _insight = insight;
         _time = Clock(at);
-        Speaker = showSpeaker ? source.Speaker() : "";
+        Speaker = source.Speaker();
         OpenLinkCommand = new AsyncRelayCommand(() => insight.Link is null ? Task.CompletedTask : openUri(insight.Link));
     }
 
@@ -30,7 +30,7 @@ public sealed partial class FactViewModel : ObservableObject
     public string Reason => _insight.Reason;
     /// <summary>The claim, and how many times it was said when more than once.</summary>
     public string Title => Claim + (Count > 1 ? $" ×{Count}" : "");
-    /// <summary>"You" or "Them" when the call is heard too; empty otherwise.</summary>
+    /// <summary>"You" or "Them".</summary>
     public string Speaker { get; }
     public bool HasLink => _insight.Link is not null;
 
@@ -38,7 +38,16 @@ public sealed partial class FactViewModel : ObservableObject
     /// Shows where the link goes. A page the app looked up itself is a checked source; a link the model wrote can be
     /// invented, so it is labelled as the model's citation.
     /// </summary>
-    public string LinkLabel => _insight.Link is not { } link ? "" : $"{link.Host} ↗ ({(_insight.LinkChecked ? "looked up" : "cited by the model")})";
+    public string LinkLabel => _insight.Link is not { } link ? "" : $"{Where(link)} ↗ ({(_insight.LinkChecked ? "looked up" : "cited by the model")})";
+
+    /// <summary>A file (on disk, on GitHub or in Azure DevOps) reads as its name; any other page as its site. Code facts use it too.</summary>
+    internal static string Where(Uri link)
+    {
+        var azdoPath = link.Query.IndexOf("path=", StringComparison.Ordinal) is var at and >= 0 ? Uri.UnescapeDataString(link.Query[(at + 5)..].Split('&')[0]) : null;
+        if (link.IsFile) return Path.GetFileName(link.LocalPath);
+        if (azdoPath is not null) return Path.GetFileName(azdoPath);
+        return link.AbsolutePath.Contains("/blob/", StringComparison.Ordinal) ? Uri.UnescapeDataString(Path.GetFileName(link.AbsolutePath)) : link.Host;
+    }
 
     public IAsyncRelayCommand OpenLinkCommand { get; }
 

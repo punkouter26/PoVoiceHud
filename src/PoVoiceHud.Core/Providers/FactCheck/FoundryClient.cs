@@ -20,7 +20,9 @@ public sealed class ContentFilteredException : Exception
 /// /models/chat/completions?api-version=… appended and the key goes in the api-key header. The model is fixed, and the
 /// reply is held to the verdict schema. Each attempt has its own time limit and transient failures are retried.
 /// </summary>
-public sealed class FoundryClient(HttpClient http, Uri endpoint, string? apiKey, ResiliencePipeline? retry = null, TimeSpan? timeout = null) : ILanguageModel
+/// <param name="responseFormat">The JSON schema the reply is held to: the fact checker's verdict unless another is given (<see cref="Repos.CodeAnswerer.ReplyFormat"/>).</param>
+public sealed class FoundryClient(HttpClient http, Uri endpoint, string? apiKey, ResiliencePipeline? retry = null, TimeSpan? timeout = null,
+    object? responseFormat = null) : ILanguageModel
 {
     /// <summary>
     /// ~1–1.5 s per verdict on a GlobalStandard deployment, and it honours the JSON schema natively. The resource must have
@@ -57,6 +59,7 @@ public sealed class FoundryClient(HttpClient http, Uri endpoint, string? apiKey,
 
     private readonly ResiliencePipeline _retry = retry ?? Resilience.Default;
     private readonly TimeSpan _timeout = timeout ?? TimeSpan.FromSeconds(8);
+    private readonly object _format = responseFormat ?? VerdictFormat;
 
     /// <summary>The resource root: an https URL.</summary>
     public static bool IsValidEndpoint(string? endpoint) => Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) && uri.Scheme == "https";
@@ -81,7 +84,7 @@ public sealed class FoundryClient(HttpClient http, Uri endpoint, string? apiKey,
                     ["messages"] = new object[] { new { role = "system", content = system }, new { role = "user", content = user } },
                     ["temperature"] = 0,
                     ["max_tokens"] = MaxTokens,
-                    ["response_format"] = VerdictFormat,
+                    ["response_format"] = _format,
                 };
                 using var request = new HttpRequestMessage(HttpMethod.Post, Resolve(endpoint)) { Content = JsonContent.Create(body) };
                 if (!string.IsNullOrEmpty(apiKey)) request.Headers.Add("api-key", apiKey);

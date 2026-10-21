@@ -1,7 +1,6 @@
-using System.Text.Json.Serialization;
-
 namespace PoVoiceHud.Core.Config;
 
+/// <summary>Which devices <see cref="Audio.WasapiDualCapture"/> opens. The app always opens both: you and the call.</summary>
 public enum AudioInput { Mic, Remote, Both }
 
 /// <summary>
@@ -14,8 +13,11 @@ public sealed record Settings
     public string? FoundryEndpoint { get; init; }
     /// <summary>Looks each claim up on Wikipedia before the model judges it, so the verdict can cite a real article.</summary>
     public bool LookUpClaims { get; init; } = true;
-    /// <summary>Also transcribes and checks what the other side of a call says (the speakers' audio), labelled "Them".</summary>
-    public bool ListenToCall { get; init; }
+    /// <summary>
+    /// The code repository claims about the code are checked against, optional: an https git URL (GitHub or Azure DevOps,
+    /// cloned into the app's cache) or a folder holding a git repository. Its access token is in Credential Manager.
+    /// </summary>
+    public string? Repository { get; init; }
     public bool StartWithWindows { get; init; }
     /// <summary>Short cues for verdicts and mute (each under the 300 ms the segmenter ignores) and the highlight's fade.</summary>
     public bool Sounds { get; init; } = true;
@@ -25,7 +27,4 @@ public sealed record Settings
     public string? Vocabulary { get; init; }
     /// <summary>Where new versions are published: an https URL or a folder that holds Velopack releases. Empty: no update check.</summary>
     public string? UpdateFeed { get; init; }
-
-    [JsonIgnore]
-    public AudioInput AudioInput => ListenToCall ? AudioInput.Both : AudioInput.Mic;
 }

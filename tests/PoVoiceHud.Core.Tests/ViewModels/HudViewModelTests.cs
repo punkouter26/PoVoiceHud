@@ -2,6 +2,7 @@ using System.Globalization;
 using PoVoiceHud.Core.Audio;
 using PoVoiceHud.Core.Config;
 using PoVoiceHud.Core.Providers;
+using PoVoiceHud.Core.Repos;
 using PoVoiceHud.Core.ViewModels;
 
 namespace PoVoiceHud.Core.Tests.ViewModels;
@@ -87,19 +88,75 @@ public class HudViewModelTests
 
         var fact = Assert.Single(_vm.Facts);
         Assert.Equal("en.wikipedia.org ↗ (looked up)", fact.LinkLabel);
-        Assert.Equal("✅ Correct: The Eiffel Tower was completed in 1889 — Completed in March 1889. (https://en.wikipedia.org/wiki/Eiffel_Tower)", _vm.FactsText);
+        _vm.Page = HudPage.Facts;
+        Assert.True(_vm.CanCopy);
+        Assert.Equal("✅ Correct: The Eiffel Tower was completed in 1889 — Completed in March 1889. (https://en.wikipedia.org/wiki/Eiffel_Tower)", _vm.CopyText);
 
         await fact.OpenLinkCommand.ExecuteAsync(null);
         Assert.Equal(wiki, Assert.Single(_opened));
+
+        // A file of the code repository reads as its name, wherever it opens.
+        foreach (var file in new[] { "https://github.com/acme/pmis/blob/HEAD/src/InvoiceService.cs", "https://dev.azure.com/acme/PMIS/_git/pmis?path=/src/InvoiceService.cs", "file:///C:/src/pmis/src/InvoiceService.cs" })
+        {
+            var said = Line("The invoice service retries three times.", 5);
+            _vm.AddTranscript(said);
+            _vm.Push(new Checked(said, new Insight($"The invoice service retries three times ({file})", Verdict.Contradicted, "It does not retry.", 0.9, new Uri(file), LinkChecked: true)));
+            Assert.Equal("InvoiceService.cs ↗ (looked up)", _vm.Facts[0].LinkLabel);
+        }
+    }
+
+    [Fact]
+    public async Task The_code_answers_a_question_and_judges_a_statement_on_the_line_and_on_code_facts()
+    {
+        var web = new Uri("https://github.com/acme/site/blob/HEAD/docs/index.html");
+        var editor = new Uri("vscode://file/C:/src/site/docs/index.html:1");
+        var question = Line("How many pages are on our website?", 1);
+        _vm.AddTranscript(question);
+        _vm.MarkChecking(question, busy: true);
+        _vm.PushCode(new CodeChecked(question, new CodeFact("How many pages are on the website", null, "Nine.", [new CodeSource("docs/index.html", web, editor)])));
+        _vm.MarkChecking(question, busy: false);
+        var statement = Line("The invoice service retries three times.", 2);
+        _vm.AddTranscript(statement);
+        _vm.PushCode(new CodeChecked(statement, new CodeFact("The invoice service retries three times", Verdict.Contradicted, "It does not retry.", [])));
+
+        Assert.Equal((LineState.Answered, "Answer — Nine."), (_vm.Live[0].State, _vm.Live[0].Note));
+        Assert.Equal((LineState.Incorrect, "Incorrect — It does not retry."), (_vm.Live[1].State, _vm.Live[1].Note));
+        Assert.Equal(["The invoice service retries three times", "How many pages are on the website"], _vm.CodeFacts.Select(f => f.Topic));   // newest first
+        Assert.Empty(_vm.Facts);   // Facts keeps the claims checked against Wikipedia
+        Assert.Equal("1 answer · 1 checked", _vm.CodeSummary);
+        Assert.Equal((0, 1, 0), (_vm.Supported, _vm.Contradicted, _vm.Unverified));   // an answer is not a verdict
+        Assert.Equal("❌ The invoice service retries three times", _vm.Headline);
+
+        var source = Assert.Single(_vm.CodeFacts[1].Sources);
+        Assert.Equal(("index.html ↗", "docs"), (source.Label, source.Folder));
+        await source.OpenCommand.ExecuteAsync(null);
+        await source.OpenInEditorCommand.ExecuteAsync(null);
+        Assert.Equal([web, editor], _opened);
+
+        var unsure = Line("The invoice service logs every payment.", 3);
+        _vm.AddTranscript(unsure);
+        _vm.PushCode(new CodeChecked(unsure, new CodeFact("The invoice service logs every payment", Verdict.Unverified, "The excerpts do not show it.", [])));
+        Assert.Equal(LineState.CantTell, _vm.Live[2].State);
+        Assert.Equal(2, _vm.CodeFacts.Count);   // "can't tell" is a note on its line, not a code fact
+
+        _vm.Page = HudPage.Code;
+        Assert.Equal("❌ Incorrect: The invoice service retries three times — It does not retry.\n💬 Answer: How many pages are on the website — Nine. (docs/index.html)".Replace("\n", Environment.NewLine), _vm.CopyText);
     }
 
     [Fact]
     public void The_live_page_shows_first_settings_replace_the_pages_and_setup_keeps_them_shown()
     {
         Assert.True(_vm.ShowsLive);
-        _vm.IsFactsOpen = true;
+        _vm.Page = HudPage.Facts;
         Assert.False(_vm.ShowsLive);
-        Assert.True(_vm.ShowsFacts);
+        Assert.True(_vm.ShowsFacts && _vm.ShowsList);
+        Assert.False(_vm.CanCopy);   // nothing to copy yet
+        _vm.Page = HudPage.Code;
+        Assert.True(_vm.ShowsCode);
+        Assert.Contains("Connect a code repository", _vm.NoCodeHint);
+        _vm.HasRepository = true;
+        Assert.StartsWith("No code facts yet", _vm.NoCodeHint);
+        _vm.Page = HudPage.Facts;
 
         _vm.ToggleSettingsCommand.Execute(null);
         Assert.True(_vm.ShowsSettings);
@@ -119,12 +176,11 @@ public class HudViewModelTests
     }
 
     [Fact]
-    public void Lines_say_who_spoke_only_when_the_call_is_heard_too_and_a_new_pipeline_clears_checking()
+    public void Lines_say_who_spoke_and_a_new_pipeline_clears_checking()
     {
         _vm.AddTranscript(Line("first line here", 1));
-        Assert.Equal("", _vm.Live[0].Speaker);
+        Assert.Equal("You:", _vm.Live[0].Speaker);
 
-        _vm.Apply(new Settings { ListenToCall = true });
         var theirs = Line("second line here", 62, SourceHint.Teams);
         _vm.AddTranscript(theirs);
         Assert.Equal("Them:", _vm.Live[1].Speaker);

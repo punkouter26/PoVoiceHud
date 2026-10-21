@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace PoVoiceHud.Core.Config;
 
@@ -18,13 +17,7 @@ public static class SettingsStore
         if (!File.Exists(path)) return (new Settings(), null);
         try
         {
-            var json = File.ReadAllText(path);
-            var settings = JsonSerializer.Deserialize<Settings>(json, Options) ?? new Settings();
-            // Older versions stored the call switch as "AudioInput": "Both" (or "Remote"); carry it over rather than drop it.
-            if (JsonNode.Parse(json) is JsonObject old && !old.ContainsKey(nameof(Settings.ListenToCall))
-                && old["AudioInput"] is JsonValue input && input.TryGetValue<string>(out var audio) && audio is "Both" or "Remote")
-                settings = settings with { ListenToCall = true };
-            return (settings, null);
+            return (JsonSerializer.Deserialize<Settings>(File.ReadAllText(path), Options) ?? new Settings(), null);
         }
         catch (JsonException e)
         {

@@ -7,10 +7,14 @@ using PoVoiceHud.Core.Providers;
 
 namespace PoVoiceHud.Core.ViewModels;
 
+/// <summary>The page the switch at the top has chosen.</summary>
+public enum HudPage { Live, Facts, Code }
+
 /// <summary>
-/// The window: a header and one of three pages, Live (every line heard, highlighted by its verdict), Facts (only the
-/// claims found correct or incorrect) or Settings. Until a working endpoint and key are set (<see cref="NeedsSetup"/>)
-/// only Settings is shown. The header's headline shows whichever happened last: a verdict or a status change.
+/// The window: a header and one of four pages, Live (every line heard, highlighted by its verdict or answer), Facts (the
+/// claims found correct or incorrect), Code facts (questions about the code repository answered, and statements about it
+/// judged) or Settings. Until a working endpoint and key are set (<see cref="NeedsSetup"/>) only Settings is shown. The
+/// header's headline shows whichever happened last: a verdict, an answer or a status change.
 /// </summary>
 public sealed partial class HudViewModel(Func<Uri, Task> openUri) : ObservableObject
 {
@@ -19,7 +23,6 @@ public sealed partial class HudViewModel(Func<Uri, Task> openUri) : ObservableOb
 
     private readonly HashSet<TranscriptLine> _inFlight = [];
     private string _lastStatus = "Starting…";
-    private bool _showSpeaker;
 
     [ObservableProperty] private bool _isMuted;
     [ObservableProperty] private bool _isChecking;
@@ -28,13 +31,15 @@ public sealed partial class HudViewModel(Func<Uri, Task> openUri) : ObservableOb
     [ObservableProperty] private double _micLevel;
     /// <summary>Who the meter is hearing: the microphone (you) or the call.</summary>
     [ObservableProperty] private SourceHint _levelSource = SourceHint.Mic;
-    /// <summary>Facts rather than Live is the chosen page.</summary>
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowsLive), nameof(ShowsFacts))] private bool _isFactsOpen;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowsSettings), nameof(ShowsPages), nameof(ShowsLive), nameof(ShowsFacts))]
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowsLive), nameof(ShowsFacts), nameof(ShowsCode), nameof(ShowsList), nameof(CanCopy))]
+    private HudPage _page;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowsSettings), nameof(ShowsPages), nameof(ShowsLive), nameof(ShowsFacts), nameof(ShowsCode), nameof(ShowsList))]
     private bool _isSettingsOpen;
     /// <summary>No working endpoint and key yet: the app shows Settings and listens to nothing until there is.</summary>
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowsSettings), nameof(ShowsPages), nameof(ShowsLive), nameof(ShowsFacts))]
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ShowsSettings), nameof(ShowsPages), nameof(ShowsLive), nameof(ShowsFacts), nameof(ShowsCode), nameof(ShowsList))]
     private bool _needsSetup;
+    /// <summary>A code repository is connected, so sentences about it are looked up (the Code facts page says how, otherwise).</summary>
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(NoCodeHint))] private bool _hasRepository;
     // This session's verdicts, for the share bar along the bottom of the header.
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(TallySummary))] private int _supported;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(TallySummary))] private int _contradicted;
@@ -43,12 +48,27 @@ public sealed partial class HudViewModel(Func<Uri, Task> openUri) : ObservableOb
     public bool ShowsSettings => IsSettingsOpen || NeedsSetup;
     /// <summary>The Live and Facts pages and the switch between them.</summary>
     public bool ShowsPages => !ShowsSettings;
-    public bool ShowsLive => ShowsPages && !IsFactsOpen;
-    public bool ShowsFacts => ShowsPages && IsFactsOpen;
+    public bool ShowsLive => ShowsPages && Page == HudPage.Live;
+    public bool ShowsFacts => ShowsPages && Page == HudPage.Facts;
+    public bool ShowsCode => ShowsPages && Page == HudPage.Code;
+    /// <summary>Facts or Code facts: a list with a count and Copy.</summary>
+    public bool ShowsList => ShowsFacts || ShowsCode;
     public bool HasLive => Live.Count > 0;
     public bool NoLive => Live.Count == 0;
     public bool HasFacts => Facts.Count > 0;
     public bool NoFacts => Facts.Count == 0;
+    public bool HasCodeFacts => CodeFacts.Count > 0;
+    public bool NoCodeFacts => CodeFacts.Count == 0;
+
+    /// <summary>What the empty Code facts page says: how to ask, or that a repository has to be connected first.</summary>
+    public string NoCodeHint => HasRepository
+        ? "No code facts yet. Say the repository's name, a file or class in it, or words like \"our code\", \"the repo\" or \"our website\": questions are answered from the code and statements checked against it."
+        : "Connect a code repository in Settings (a GitHub or Azure DevOps URL, or a folder), and questions and statements about it are answered and checked here.";
+
+    public bool CanCopy => Page == HudPage.Code ? HasCodeFacts : HasFacts;
+
+    /// <summary>"2 answers · 1 checked": the Code facts page heading.</summary>
+    public string CodeSummary => $"{CodeFacts.Count(f => f.IsAnswer)} {(CodeFacts.Count(f => f.IsAnswer) == 1 ? "answer" : "answers")} · {CodeFacts.Count(f => !f.IsAnswer)} checked";
 
     /// <summary>"3 correct · 1 incorrect"; the Facts page heading and the headline's tooltip.</summary>
     public string FactsSummary => $"{Facts.Count(f => f.IsCorrect)} correct · {Facts.Count(f => !f.IsCorrect)} incorrect";
@@ -65,15 +85,15 @@ public sealed partial class HudViewModel(Func<Uri, Task> openUri) : ObservableOb
     /// <summary>Claims found correct or incorrect, newest first. "Can't tell" stays on the Live page only.</summary>
     public ObservableCollection<FactViewModel> Facts { get; } = [];
 
-    /// <summary>A verdict came in (for its sound).</summary>
-    public event Action<Insight>? Arrived;
+    /// <summary>Questions about the code answered and statements about it judged, newest first.</summary>
+    public ObservableCollection<CodeFactViewModel> CodeFacts { get; } = [];
 
-    /// <summary>Picks up the settings that can change while the HUD is running.</summary>
-    public void Apply(Settings settings) => _showSpeaker = settings.ListenToCall;   // with the microphone alone, everything is yours
+    /// <summary>A verdict came in (for its sound); an answer from the code comes as "can't tell", the quiet cue.</summary>
+    public event Action<Insight>? Arrived;
 
     public void AddTranscript(TranscriptLine line)
     {
-        Live.Add(new LiveLineViewModel(line, _showSpeaker));
+        Live.Add(new LiveLineViewModel(line));
         while (Live.Count > LiveSize) Live.RemoveAt(0);
         OnPropertyChanged(nameof(HasLive));
         OnPropertyChanged(nameof(NoLive));
@@ -111,8 +131,34 @@ public sealed partial class HudViewModel(Func<Uri, Task> openUri) : ObservableOb
         Arrived?.Invoke(verdict);
     }
 
-    /// <summary>"Copy facts": one line per fact, newest first.</summary>
-    public string FactsText => string.Join(Environment.NewLine, Facts.Select(f => f.CopyLine));
+    /// <summary>
+    /// What the code says about a line: the line takes the answer or verdict, and the Code facts page gets a row, except for
+    /// "can't tell", which stays a quiet note on its line as on Facts.
+    /// </summary>
+    public void PushCode(CodeChecked result)
+    {
+        var (line, fact) = result;
+        Find(line)?.Judge(fact);
+        if (fact.Verdict is { } verdict) Tally(verdict);
+        if (fact.Verdict == Verdict.Unverified)
+        {
+            Arrived?.Invoke(new Insight(fact.Topic, Verdict.Unverified, fact.Text, 0.6));
+            return;
+        }
+        CodeFacts.Insert(0, new CodeFactViewModel(fact, line.At, line.Source, openUri));
+        while (CodeFacts.Count > FactsSize) CodeFacts.RemoveAt(CodeFacts.Count - 1);
+        Headline = $"{(fact.Verdict is { } v ? v.Emoji() : "💬")} {fact.Topic}";
+        OnPropertyChanged(nameof(HasCodeFacts));
+        OnPropertyChanged(nameof(NoCodeFacts));
+        OnPropertyChanged(nameof(CodeSummary));
+        OnPropertyChanged(nameof(CanCopy));
+        Arrived?.Invoke(new Insight(fact.Topic, fact.Verdict ?? Verdict.Unverified, fact.Text, 0.9));
+    }
+
+    /// <summary>Copy: one line per fact on the page on show, newest first.</summary>
+    public string CopyText => Page == HudPage.Code
+        ? string.Join(Environment.NewLine, CodeFacts.Select(f => f.CopyLine))
+        : string.Join(Environment.NewLine, Facts.Select(f => f.CopyLine));
 
     private void AddFact(Insight verdict, DateTimeOffset at, SourceHint source)
     {
@@ -125,12 +171,13 @@ public sealed partial class HudViewModel(Func<Uri, Task> openUri) : ObservableOb
         }
         else
         {
-            Facts.Insert(0, new FactViewModel(verdict, at, source, _showSpeaker, openUri));
+            Facts.Insert(0, new FactViewModel(verdict, at, source, openUri));
             while (Facts.Count > FactsSize) Facts.RemoveAt(Facts.Count - 1);
         }
         OnPropertyChanged(nameof(HasFacts));
         OnPropertyChanged(nameof(NoFacts));
         OnPropertyChanged(nameof(FactsSummary));
+        OnPropertyChanged(nameof(CanCopy));
     }
 
     private void Tally(Verdict verdict)

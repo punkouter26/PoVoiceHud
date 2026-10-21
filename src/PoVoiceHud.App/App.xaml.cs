@@ -16,6 +16,7 @@ using PoVoiceHud.Core.Config;
 using PoVoiceHud.Core.Diagnostics;
 using PoVoiceHud.Core.Providers;
 using PoVoiceHud.Core.Providers.FactCheck;
+using PoVoiceHud.Core.Repos;
 using PoVoiceHud.Core.Sessions;
 using PoVoiceHud.Core.ViewModels;
 using Windows.ApplicationModel.DataTransfer;
@@ -47,6 +48,7 @@ public partial class App : Application
     private TrayIcon? _tray;
     private DispatcherTimer? _meter;
     private bool _demo;   // a layout check: no audio, and the real window placement is left alone
+    private string? _repoToken;   // the repository token the running pipeline fetched with; a new one means fetching again
 
     public App()
     {
@@ -84,7 +86,6 @@ public partial class App : Application
         var (settings, warning) = SettingsStore.Load(SettingsStore.DefaultPath);
         _settings = settings;
         var viewModel = new HudViewModel(OpenAsync);
-        viewModel.Apply(settings);
         _window = new MainWindow(viewModel);
         _window.Closed += OnClosed;
         _window.Activate();
@@ -115,7 +116,7 @@ public partial class App : Application
         _meter.Start();
 
 #if DEBUG
-        // Layout checks without a microphone: --demo seeds a sample conversation (--facts opens the Facts page,
+        // Layout checks without a microphone: --demo seeds a sample conversation (--facts opens the Facts page, --code Code facts,
         // --settings the Settings page, --setup the first-run page).
         var flags = Environment.GetCommandLineArgs();
         if (flags.Contains("--demo"))
@@ -123,13 +124,14 @@ public partial class App : Application
             _demo = true;
             _settings = _settings with { Sounds = false };   // the demo is for looking at, not listening to
             _window.SeedDemo();
-            if (flags.Contains("--facts")) viewModel.IsFactsOpen = true;
+            if (flags.Contains("--facts")) viewModel.Page = HudPage.Facts;
+            if (flags.Contains("--code")) viewModel.Page = HudPage.Code;
             if (flags.Contains("--settings")) viewModel.IsSettingsOpen = true;
             if (flags.Contains("--setup")) RequireSetup(null);
             return;
         }
 #endif
-        _log.LogInformation("PoVoiceHud {Version} starting: {Input} audio", Version, settings.AudioInput);
+        _log.LogInformation("PoVoiceHud {Version} starting", Version);
         _tray = new TrayIcon(1, MainWindow.IconPath, "PoVoiceHud — listening") { IsVisible = true };
         _tray.Selected += (_, _) => ToggleVisible();
         _tray.ContextMenu += (_, e) => e.Flyout = TrayMenu();
@@ -170,11 +172,21 @@ public partial class App : Application
             Status("Checking models…");
             var models = await ModelStore.EnsureAsync(new Progress<double>(p => Status($"Downloading models… {p:P0}")), CancellationToken.None);
 
+            // The code repository, if there is one: a URL is cloned (the first time, which can take a while) or refreshed; a folder is read where it is.
+            string? repoRoot = null, repoWarning = null;
+            var repoToken = _repoToken = CredentialStore.Read(CredentialStore.RepoToken);
+            if (settings.Repository is { } location)
+            {
+                Status("Fetching the code repository…");
+                (repoRoot, repoWarning) = await Task.Run(() => RepoSource.Open(location, repoToken));
+                if (repoWarning is not null) _log.LogWarning("Repository: {Warning}", repoWarning);
+            }
+
             Status("Loading models…");
             var services = new ServiceCollection();
             services.AddLogging(b => b.AddDebug().AddProvider(_fileLog));
             services.AddSingleton(Http);
-            services.AddPoVoiceHudCore(settings, models);
+            services.AddPoVoiceHudCore(settings, models, repoRoot);
             var container = services.BuildServiceProvider();
 
             // Resolving the pipeline loads Whisper: keep it off the UI thread.
@@ -200,6 +212,17 @@ public partial class App : Application
                 Sessions.Append(new SessionEntry { At = DateTimeOffset.Now, Source = line.Source.ToString(), Heard = line.Text });
             });
             _ = Drain(pipeline.Checking, c => viewModel.MarkChecking(c.Line, c.Busy));
+            viewModel.HasRepository = container.GetService<CodeRepository>() is not null;
+            _ = Drain(pipeline.CodeFacts, result =>
+            {
+                viewModel.PushCode(result);
+                Sessions.Append(new SessionEntry
+                {
+                    At = DateTimeOffset.Now, Source = result.Line.Source.ToString(), Claim = result.Fact.Topic,
+                    Answer = $"{(result.Fact.Verdict is { } v ? $"{v.Emoji()} {v.Label()}" : "💬 Answer")} — {result.Fact.Text}",
+                    Verdict = result.Fact.Verdict?.ToString() ?? "Answer", Link = result.Fact.Sources is [var first, ..] ? first.Link : null,
+                });
+            });
             _ = Drain(pipeline.Verdicts, result =>
             {
                 viewModel.Push(result);
@@ -210,8 +233,11 @@ public partial class App : Application
                 });
             });
             pipeline.Start();
-            _log.LogInformation("Listening: {Model} at {Host}, Wikipedia {LookUp}", FoundryClient.Model,
-                Uri.TryCreate(settings.FoundryEndpoint, UriKind.Absolute, out var host) ? host.Host : "none", settings.LookUpClaims ? "on" : "off");
+            _log.LogInformation("Listening: {Model} at {Host}, Wikipedia {LookUp}, repository {Files}", FoundryClient.Model,
+                Uri.TryCreate(settings.FoundryEndpoint, UriKind.Absolute, out var host) ? host.Host : "none", settings.LookUpClaims ? "on" : "off",
+                container.GetService<CodeRepository>() is { } code ? $"{code.Index.Symbols.Count} names" : "none");
+            // After the audio's own "Listening", so it is not overwritten straight away.
+            if (repoWarning is not null) _ = Task.Delay(1500).ContinueWith(_ => Status(repoWarning), TaskScheduler.Default);
         }
         catch (Exception e)
         {
@@ -229,7 +255,6 @@ public partial class App : Application
         var old = _settings;
         _settings = settings;
         var viewModel = _window!.ViewModel;
-        viewModel.Apply(settings);
         if (viewModel.NeedsSetup)
         {
             viewModel.NeedsSetup = false;
@@ -237,13 +262,15 @@ public partial class App : Application
             await StartAsync(settings);
             return;
         }
-        // The endpoint, key and Wikipedia switch are the checker's alone, and sounds and start-up the app's: Whisper and the audio keep running.
-        if (_pipeline is { } pipeline && settings with
+        // The endpoint, key and Wikipedia switch are the checker's, and sounds and start-up the app's: Whisper and the audio keep running.
+        // A new repository or token means fetching it again, and a pipeline that is not running yet (loading, or failed) is built afresh.
+        if (_pipeline is { } pipeline && CredentialStore.Read(CredentialStore.RepoToken) == _repoToken && settings with
             {
                 FoundryEndpoint = old.FoundryEndpoint, LookUpClaims = old.LookUpClaims, Sounds = old.Sounds, StartWithWindows = old.StartWithWindows,
             } == old)
         {
             pipeline.Checker = ServiceCollectionExtensions.CreateChecker(settings, Http);
+            pipeline.Code = ServiceCollectionExtensions.CreateCodeAnswerer(settings, Http, _container?.GetService<CodeRepository>());
             _log.LogInformation("Settings applied; new fact checker");
             viewModel.SetStatus("Settings applied");
             return;
@@ -313,9 +340,10 @@ public partial class App : Application
         var environment = string.Join("\n",
             $"PoVoiceHud {Version} ({(IsInstalled() ? "installed" : "not installed: run from a build folder")})",
             $"Windows {Environment.OSVersion.Version} · {RuntimeInformation.FrameworkDescription} · {Environment.ProcessorCount} logical cores",
-            $"Audio {settings.AudioInput} · {FoundryClient.Model} at {(Uri.TryCreate(settings.FoundryEndpoint, UriKind.Absolute, out var endpoint) ? endpoint.Host : "none")}" +
+            $"Audio: microphone and call · {FoundryClient.Model} at {(Uri.TryCreate(settings.FoundryEndpoint, UriKind.Absolute, out var endpoint) ? endpoint.Host : "none")}" +
             $" · key stored: {(CredentialStore.Read(CredentialStore.FoundryKey) is null ? "no" : "yes")}",
-            $"Wikipedia: {(settings.LookUpClaims ? "on" : "off")} · start with Windows: {(settings.StartWithWindows ? "on" : "off")}" +
+            $"Wikipedia: {(settings.LookUpClaims ? "on" : "off")} · repository: {(settings.Repository is null ? "none" : RepoSource.IsRemote(settings.Repository) ? "URL" : "folder")}" +
+            $" · repository token stored: {(CredentialStore.Read(CredentialStore.RepoToken) is null ? "no" : "yes")} · start with Windows: {(settings.StartWithWindows ? "on" : "off")}" +
             $" · update feed: {(settings.UpdateFeed is null ? "none" : "set")}",
             "");
         try

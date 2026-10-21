@@ -26,7 +26,15 @@
                 <TextBlock Style="{StaticResource HudCaption}" TextWrapping="Wrap"
                            Text="Claims are checked by gpt-4.1-mini, so the resource needs a deployment of that name. Apply checks the connection first. The key is kept in Windows Credential Manager." />
 
-                <!-- 2. Four switches, two by two. The longer explanations are in the tooltips. -->
+                <!-- 2. Optional: a code repository, so claims about the code are checked against its files -->
+                <TextBox Header="Code repository (optional)" Text="{x:Bind ViewModel.Repository, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0"
+                         PlaceholderText="A GitHub or Azure DevOps URL, or a folder on this PC" />
+                <PasswordBox Header="Repository access token" Password="{x:Bind ViewModel.RepositoryToken, Mode=TwoWay}"
+                             PlaceholderText="{x:Bind local:SettingsView.TokenPlaceholder(ViewModel.HasRepositoryToken), Mode=OneWay}" />
+                <TextBlock Style="{StaticResource HudCaption}" TextWrapping="Wrap"
+                           Text="A claim that names a file or class in it is checked against that code. Up to three matching files (the first 6,000 characters of each) go to the model with the claim. A URL is cloned to this PC and refreshed at each start; a private one needs a GitHub or Azure DevOps personal access token with read access to code." />
+
+                <!-- 3. Three switches, two by two. The longer explanations are in the tooltips. The call is always heard too. -->
                 <Grid ColumnSpacing="12" RowSpacing="2" Margin="0,4,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -39,16 +47,14 @@
                     <ToggleSwitch Header="Wikipedia look-ups" IsOn="{x:Bind ViewModel.LookUpClaims, Mode=TwoWay}" MinWidth="0"
                                   AutomationProperties.HelpText="{x:Bind ViewModel.LookUpNote, Mode=OneWay}"
                                   ToolTipService.ToolTip="{x:Bind ViewModel.LookUpNote, Mode=OneWay}" />
-                    <ToggleSwitch Grid.Column="1" Header="Also listen to the call" IsOn="{x:Bind ViewModel.ListenToCall, Mode=TwoWay}" MinWidth="0"
-                                  ToolTipService.ToolTip="Transcribe and check what the other side of a call says (the speakers' audio) as well as your microphone. Lines are then labelled You and Them." />
                     <ToggleSwitch Grid.Row="1" Header="Start with Windows" IsOn="{x:Bind ViewModel.StartWithWindows, Mode=TwoWay}" MinWidth="0" />
-                    <ToggleSwitch Grid.Row="1" Grid.Column="1" Header="Sounds and animations" IsOn="{x:Bind ViewModel.Sounds, Mode=TwoWay}" MinWidth="0"
+                    <ToggleSwitch Grid.Column="1" Header="Sounds and animations" IsOn="{x:Bind ViewModel.Sounds, Mode=TwoWay}" MinWidth="0"
                                   ToolTipService.ToolTip="A short cue for each verdict and for mute (each under a quarter of a second, so call audio never transcribes it), and the highlight fading in" />
                 </Grid>
             </StackPanel>
         </ScrollViewer>
 
-        <!-- 3. What Apply found, then the buttons: always in view, however short the window -->
+        <!-- 4. What Apply found, then the buttons: always in view, however short the window -->
         <Grid Grid.Row="1" ColumnSpacing="8" RowSpacing="6" Padding="4,0,12,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoVoiceHud — Code facts (2026-10-20)</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1b1b1f; --soft: #5c5f66; --line: #d9dbe0; --bg: #f6f7f9; --card: #ffffff; --mark: #c81e2d; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ececf1; --soft: #a3a7b0; --line: #34363c; --bg: #17181b; --card: #212327; } }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h3 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--soft); }
+  p.lead { color: var(--soft); margin: 0 0 20px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  .shot { position: relative; }
+  .shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
+  .pin { position: absolute; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; background: var(--mark); color: #fff;
+         font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+  ol.notes { list-style: none; margin: 12px 0 0; padding: 0; counter-reset: n; }
+  ol.notes li { counter-increment: n; position: relative; padding-left: 34px; margin: 0 0 10px; }
+  ol.notes li::before { content: counter(n); position: absolute; left: 0; top: 1px; width: 22px; height: 22px; border-radius: 50%;
+                        background: var(--mark); color: #fff; font-weight: 700; font-size: 13px; line-height: 22px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Code facts: questions about the code answered</h1>
+  <p class="lead">Debug build with <code>--demo</code> and <code>--demo --code</code>, captured with <code>PrintWindow</code>. "Before" is the Facts page, where a claim naming a file was checked against it; "after" moves talk about the code to its own page, questions included.</p>
+  <div class="pair">
+    <section class="side">
+      <h3>Before: code claims on Facts</h3>
+      <div class="shot"><img src="261020-repo-after-facts.png" alt="Before: a claim about InvoiceService on the Facts page among Wikipedia facts">
+        <span class="pin" style="left:40%;top:22%">1</span></div>
+      <ol class="notes">
+        <li>Only a statement that named a file was checked; a question ("How many pages…?") was skipped.</li>
+      </ol>
+    </section>
+    <section class="side">
+      <h3>After: a Code facts page</h3>
+      <div class="shot"><img src="261020-code-facts-page.png" alt="After: Code facts lists an answer and a verdict, each with its files and VS Code links">
+        <span class="pin" style="left:42%;top:14%">1</span><span class="pin" style="left:30%;top:37%">2</span><span class="pin" style="left:20%;top:45%">3</span></div>
+      <ol class="notes">
+        <li>A third tab, with a count and Copy.</li>
+        <li>A question gets an answer from the code…</li>
+        <li>…with the files it rests on: each opens on GitHub or Azure DevOps, and in VS Code at the line.</li>
+      </ol>
+    </section>
+  </div>
+  <div class="pair">
+    <section class="side">
+      <h3>After: on the Live page</h3>
+      <div class="shot"><img src="261020-code-facts-live.png" alt="After: the question about the website gets an Answer note with the code icon">
+        <span class="pin" style="left:8%;top:66%">1</span></div>
+      <ol class="notes">
+        <li>The answer as a note under the question, marked with the code icon; a statement about the code is green or red as usual.</li>
+      </ol>
+    </section>
+    <section class="side">
+      <h3>After: at the minimum size</h3>
+      <div class="shot"><img src="261020-code-facts-min.png" alt="After: at 420 × 320 the three tabs fit, and the count shortens rather than wrapping">
+        <span class="pin" style="left:73%;top:25%">1</span></div>
+      <ol class="notes">
+        <li>The three tabs fit; the count shortens instead of wrapping.</li>
+      </ol>
+    </section>
+  </div>
+</main>
+</body>
+</html>

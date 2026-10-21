@@ -5,6 +5,7 @@ using PoVoiceHud.Core.Asr;
 using PoVoiceHud.Core.Audio;
 using PoVoiceHud.Core.Providers;
 using PoVoiceHud.Core.Providers.FactCheck;
+using PoVoiceHud.Core.Repos;
 using PoVoiceHud.Core.Vad;
 
 namespace PoVoiceHud.Core;
@@ -15,9 +16,12 @@ public sealed record TranscriptLine(SourceHint Source, DateTimeOffset At, string
 /// <summary>The verdict on one transcript line.</summary>
 public sealed record Checked(TranscriptLine Line, Insight Verdict);
 
+/// <summary>What the code repository says about one transcript line: an answer, or a verdict on a statement about the code.</summary>
+public sealed record CodeChecked(TranscriptLine Line, CodeFact Fact);
+
 /// <summary>
-/// Audio frames → VAD → utterances → Whisper → fact checker. Utterances are transcribed one at a time; up to
-/// <see cref="ParallelChecks"/> claims are checked at once. Muting bumps a generation counter so anything already in
+/// Audio frames → VAD → utterances → Whisper → fact checker, or <see cref="Code"/> for a sentence about the code repository
+/// (questions too). Utterances are transcribed one at a time; up to <see cref="ParallelChecks"/> sentences are checked at once. Muting bumps a generation counter so anything already in
 /// flight is discarded when it completes.
 /// </summary>
 public sealed partial class HudPipeline : IDisposable
@@ -30,14 +34,16 @@ public sealed partial class HudPipeline : IDisposable
     private readonly SileroVad _vad;
     private readonly ITranscriber _transcriber;
     private volatile IFactChecker _checker;
+    private volatile CodeAnswerer? _code;
     private readonly ILogger<HudPipeline> _log;
     private readonly UtteranceSegmenter _segmenter = new();
     // Not SingleReader: the mute setter drains it from the UI thread while the worker is the normal consumer.
     private readonly Channel<(Utterance Utterance, DateTimeOffset At)> _utterances = Channel.CreateUnbounded<(Utterance, DateTimeOffset)>();
     // Two stages so a slow model call never delays the next transcription.
-    private readonly Channel<(TranscriptLine Line, string[] Context, int Generation)> _checks = Channel.CreateUnbounded<(TranscriptLine, string[], int)>();
+    private readonly Channel<(TranscriptLine Line, string[] Context, int Generation, bool Code)> _checks = Channel.CreateUnbounded<(TranscriptLine, string[], int, bool)>();
     private readonly Channel<TranscriptLine> _transcript = Channel.CreateUnbounded<TranscriptLine>();
     private readonly Channel<Checked> _verdicts = Channel.CreateUnbounded<Checked>();
+    private readonly Channel<CodeChecked> _codeFacts = Channel.CreateUnbounded<CodeChecked>();
     private readonly Channel<string> _status = Channel.CreateUnbounded<string>();
     private readonly Channel<(TranscriptLine Line, bool Busy)> _checking = Channel.CreateUnbounded<(TranscriptLine, bool)>();
     private readonly CancellationTokenSource _cts = new();
@@ -57,6 +63,7 @@ public sealed partial class HudPipeline : IDisposable
 
     public ChannelReader<TranscriptLine> Transcript => _transcript.Reader;
     public ChannelReader<Checked> Verdicts => _verdicts.Reader;
+    public ChannelReader<CodeChecked> CodeFacts => _codeFacts.Reader;
     public ChannelReader<string> Status => _status.Reader;
 
     /// <summary>The fact checker; replaced when only its settings change, so Whisper and the audio keep running.</summary>
@@ -68,6 +75,13 @@ public sealed partial class HudPipeline : IDisposable
             _checker = value;
             Volatile.Write(ref _problem, null);   // the new one gets a fresh chance to report what is wrong
         }
+    }
+
+    /// <summary>Answers and checks sentences about the code repository; null without one. Replaced along with <see cref="Checker"/>.</summary>
+    public CodeAnswerer? Code
+    {
+        get => _code;
+        set => _code = value;
     }
 
     /// <summary>A line is queued for the fact checker (Busy) and done with it, with or without a verdict, or dropped by mute.</summary>
@@ -159,10 +173,12 @@ public sealed partial class HudPipeline : IDisposable
                     {
                         var line = new TranscriptLine(utterance.Source, at, sentence);
                         _transcript.Writer.TryWrite(line);
-                        if (FactChecker.IsCandidate(sentence))
+                        // About the code (questions too) goes to the repository; any other claim to the fact checker.
+                        var code = Code?.IsAbout(sentence, recent) == true;   // "…in it?" after "…our repo" is about the code too
+                        if (code || FactChecker.IsCandidate(sentence))
                         {
                             _checking.Writer.TryWrite((line, true));   // shown as "checking…" from the moment it is queued
-                            _checks.Writer.TryWrite((line, recent.ToArray(), generation));
+                            _checks.Writer.TryWrite((line, recent.ToArray(), generation, code));
                         }
                         recent.Add(sentence);
                         if (recent.Count > ContextLines) recent.RemoveAt(0);
@@ -188,12 +204,22 @@ public sealed partial class HudPipeline : IDisposable
             var options = new ParallelOptions { MaxDegreeOfParallelism = ParallelChecks, CancellationToken = _cts.Token };
             await Parallel.ForEachAsync(_checks.Reader.ReadAllAsync(_cts.Token), options, async (item, ct) =>
             {
-                var (line, context, generation) = item;
+                var (line, context, generation, code) = item;
                 try
                 {
-                    var verdict = await Checker.CheckAsync(line.Text, context, ct);
-                    if (Interlocked.Exchange(ref _problem, null) is not null) _status.Writer.TryWrite("Fact checks are working again");
-                    if (verdict is not null && generation == Volatile.Read(ref _generation)) _verdicts.Writer.TryWrite(new Checked(line, verdict));
+                    // Not about the code after all (a follow-on that changed the subject): a claim still gets the ordinary check.
+                    var fact = code && Code is { } answerer ? await answerer.AskAsync(line.Text, context, ct) : null;
+                    if (fact is not null)
+                    {
+                        Recovered();
+                        if (generation == Volatile.Read(ref _generation)) _codeFacts.Writer.TryWrite(new CodeChecked(line, fact));
+                    }
+                    else if (FactChecker.IsCandidate(line.Text))
+                    {
+                        var verdict = await Checker.CheckAsync(line.Text, context, ct);
+                        Recovered();
+                        if (verdict is not null && generation == Volatile.Read(ref _generation)) _verdicts.Writer.TryWrite(new Checked(line, verdict));
+                    }
                 }
                 catch (FactCheckUnavailableException e)
                 {
@@ -217,6 +243,12 @@ public sealed partial class HudPipeline : IDisposable
         }
     }
 
+    /// <summary>A check went through: if they had been failing, the header says so once.</summary>
+    private void Recovered()
+    {
+        if (Interlocked.Exchange(ref _problem, null) is not null) _status.Writer.TryWrite("Fact checks are working again");
+    }
+
     public void Dispose()
     {
         _cts.Cancel();
@@ -225,6 +257,7 @@ public sealed partial class HudPipeline : IDisposable
         // Readers (the UI's drain loops) end instead of waiting forever on a pipeline that is gone.
         _transcript.Writer.TryComplete();
         _verdicts.Writer.TryComplete();
+        _codeFacts.Writer.TryComplete();
         _status.Writer.TryComplete();
         _checking.Writer.TryComplete();
         _cts.Dispose();

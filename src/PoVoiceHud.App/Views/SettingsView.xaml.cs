@@ -20,6 +20,8 @@ public sealed partial class SettingsView : UserControl
 
     public static string KeyPlaceholder(bool hasKey) => hasKey ? "•••••••• (stored — type to replace)" : "not set";
 
+    public static string TokenPlaceholder(bool hasToken) => hasToken ? "•••••••• (stored — type to replace)" : "only for a private repository";
+
     /// <summary>A line that takes no room until there is something to say.</summary>
     public static Visibility Shown(string? text) => string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
 

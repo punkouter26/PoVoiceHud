@@ -103,7 +103,7 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Live or Facts, and on Facts the count and Copy facts -->
+                <!-- Live, Facts or Code facts, and on the two lists their count and Copy -->
                 <Grid ColumnSpacing="8" Visibility="{x:Bind ViewModel.ShowsPages, Mode=OneWay}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -117,16 +117,22 @@
                         <SelectorBarItem x:Name="FactsTab" Text="Facts" ToolTipService.ToolTip="Only the claims found correct or incorrect">
                             <SelectorBarItem.Icon><FontIcon Glyph="&#xE73E;" /></SelectorBarItem.Icon>
                         </SelectorBarItem>
+                        <SelectorBarItem x:Name="CodeTab" Text="Code facts" ToolTipService.ToolTip="Questions about the code repository answered, and statements about it checked">
+                            <SelectorBarItem.Icon><FontIcon Glyph="&#xE943;" /></SelectorBarItem.Icon>
+                        </SelectorBarItem>
                     </SelectorBar>
                     <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.FactsSummary, Mode=OneWay}" Style="{StaticResource HudCaption}"
-                               VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
                                Visibility="{x:Bind ViewModel.ShowsFacts, Mode=OneWay}" />
-                    <Button Grid.Column="2" Click="CopyFacts_Click" IsEnabled="{x:Bind ViewModel.HasFacts, Mode=OneWay}" Padding="10,4"
-                            Visibility="{x:Bind ViewModel.ShowsFacts, Mode=OneWay}"
-                            ToolTipService.ToolTip="Copy every fact as a list, to paste into notes, a chat or an email">
+                    <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.CodeSummary, Mode=OneWay}" Style="{StaticResource HudCaption}"
+                               VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                               Visibility="{x:Bind ViewModel.ShowsCode, Mode=OneWay}" />
+                    <Button Grid.Column="2" Click="Copy_Click" IsEnabled="{x:Bind ViewModel.CanCopy, Mode=OneWay}" Padding="10,4"
+                            Visibility="{x:Bind ViewModel.ShowsList, Mode=OneWay}"
+                            ToolTipService.ToolTip="Copy this page's list, one line each, to paste into notes, a chat or an email">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE8C8;" FontSize="13" />
-                            <TextBlock x:Name="CopyFactsText" Text="Copy facts" />
+                            <TextBlock x:Name="CopyText" Text="Copy" />
                         </StackPanel>
                     </Button>
                 </Grid>
@@ -210,6 +216,62 @@
                     <TextBlock Text="No facts yet. Claims the model finds correct or incorrect are listed here, newest first."
                                Visibility="{x:Bind ViewModel.NoFacts, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap"
                                VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="360" />
+                </Grid>
+
+                <!-- Code facts: questions about the code repository and their answers, statements about it and their verdicts, newest
+                     first, each with the files it rests on (on GitHub or Azure DevOps, and in VS Code at the line) -->
+                <Grid Grid.Row="1" x:Name="CodePage" Visibility="{x:Bind ViewModel.ShowsCode, Mode=OneWay}">
+                    <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Code facts">
+                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.CodeFacts}">
+                            <ItemsRepeater.Layout>
+                                <StackLayout Spacing="6" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CodeFactViewModel">
+                                    <Border Padding="10,8" CornerRadius="6" Background="{x:Bind local:MainWindow.CodeBack(Verdict)}">
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <FontIcon Glyph="{x:Bind local:MainWindow.CodeGlyph(Verdict)}" Foreground="{x:Bind local:MainWindow.CodeFore(Verdict)}"
+                                                      FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0" AutomationProperties.Name="{x:Bind Label}" />
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <TextBlock Text="{x:Bind Topic}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
+                                                <TextBlock Style="{StaticResource HudCaption}" Foreground="{ThemeResource TextFillColorPrimaryBrush}" TextWrapping="Wrap">
+                                                    <Run Text="{x:Bind Label}" FontWeight="SemiBold" /><Run Text=" — " /><Run Text="{x:Bind Text}" />
+                                                </TextBlock>
+                                                <!-- The files it rests on: each opens on GitHub or Azure DevOps, or in VS Code at the line -->
+                                                <ItemsRepeater ItemsSource="{x:Bind Sources}" Visibility="{x:Bind HasSources}" Margin="-4,2,0,0">
+                                                    <ItemsRepeater.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:CodeSourceViewModel">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <HyperlinkButton Command="{x:Bind OpenCommand}" Style="{StaticResource HudLink}" ToolTipService.ToolTip="{x:Bind Path}">
+                                                                    <TextBlock TextTrimming="CharacterEllipsis">
+                                                                        <Run Text="{x:Bind Label}" /><Run Text="  " /><Run Text="{x:Bind Folder}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                                                    </TextBlock>
+                                                                </HyperlinkButton>
+                                                                <HyperlinkButton Command="{x:Bind OpenInEditorCommand}" Style="{StaticResource HudLink}" Content="VS Code"
+                                                                                 ToolTipService.ToolTip="Open in VS Code at the line it is about" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsRepeater.ItemTemplate>
+                                                </ItemsRepeater>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="{x:Bind Time}" Style="{StaticResource HudCaption}" HorizontalAlignment="Right" />
+                                                <TextBlock Text="{x:Bind Speaker}" Style="{StaticResource HudCaption}" HorizontalAlignment="Right" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                    </ScrollViewer>
+                    <TextBlock Text="{x:Bind ViewModel.NoCodeHint, Mode=OneWay}"
+                               Visibility="{x:Bind ViewModel.NoCodeFacts, Mode=OneWay}" Style="{StaticResource HudCaption}" TextWrapping="Wrap"
+                               VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="380" />
                 </Grid>
 
                 <!-- Settings: in the window rather than a flyout, so switching windows to copy a key does not close or apply them -->

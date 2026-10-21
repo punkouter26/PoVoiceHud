@@ -26,11 +26,25 @@ What the unit and integration tests cannot reach: a live microphone, a real Foun
 - [ ] **Copy facts** → the button says *Copied*, and pasting gives one `✅ Correct: … — … (link)` line per fact.
 - [ ] Minimize, maximize and restore → the pages fill the window and the Live page keeps its place. Close and reopen the app → it comes back at the same size and position.
 
+## Code repository
+
+- [ ] Settings → *Code repository* `https://github.com/<you>/<public repo>` → **Apply** says `✓ Repository found: N branches.`, and the header goes through *Fetching the code repository…*. Then, on the Code facts page:
+- [ ] "How many pages are in the <repository name> website?" → an *Answer* on the Live line and on Code facts, with the files; the count matches the repository.
+- [ ] "The <ClassName> retries three times." → *Correct* or *Incorrect* from the code; `<ClassName>.cs ↗` opens it on GitHub and **VS Code** opens it at `class <ClassName>`.
+- [ ] "What does our website use for hosting?" (code words, no file named) → an answer from the infrastructure files.
+- [ ] "The Eiffel Tower was completed in 1889." → still checked against Wikipedia, on Facts, not Code facts.
+- [ ] **Copy** on Code facts → one `💬 Answer: …` or `❌ Incorrect: …` line each.
+- [ ] A private GitHub repository without a token → **Apply** says `✗ Could not read the repository: …` and stays on Settings. With a token that can read contents → ✓.
+- [ ] The same with an Azure DevOps URL as *Clone* copies it (`https://<org>@dev.azure.com/<org>/<project>/_git/<repo>`) and a PAT with *Code (Read)*; a Code facts link opens the file in Azure DevOps.
+- [ ] A local folder that is a git repository → ✓ with its branch; any other folder → ✗.
+- [ ] Offline, restart with a repository URL set → the app starts, and the header says the repository was not refreshed.
+- [ ] Clear the repository → **Apply**: nothing is read; claims go to Wikipedia only.
+
 ## Window, audio and tray
 
 - [ ] Mute with the microphone and with the tray's *Mute*: a falling chirp, the header says *Muted*, the level bars go dark, and nothing more is transcribed. A line that was *Checking…* goes plain. In Teams, Ctrl+Shift+M still mutes the call.
 - [ ] Unmute and speak: the Live page's clock times carry on from the real time (they do not restart at 00:00).
-- [ ] *Also listen to the call* on, then play a video with speech → its lines are labelled *Them*.
+- [ ] Play a video with speech → its lines are labelled *Them*; your own lines are labelled *You*.
 - [ ] Drag the window by the headline, snap it with Win+Arrow, and resize it down to its minimum (420 × 320) → nothing is cut off; long pages scroll, and Settings keeps Apply and Cancel in view. The caption buttons do not cover ⚙ at 100 %, 150 % and 200 % scale.
 - [ ] *Sounds and animations* off → no cues, and highlights appear without fading in.
 - [ ] Tray: left click hides and shows the HUD. *Open the history folder* opens `sessions`. *Copy diagnostics* puts a zip on the clipboard (logs, `settings.json`, `environment.txt`, no `sessions`). *Mute*/*Unmute* follows the header. *Quit* closes the app and removes the icon. *Quit PoVoiceHud* in Settings does the same.

@@ -8,6 +8,8 @@ namespace PoVoiceHud.Core.Config;
 public static partial class CredentialStore
 {
     public const string FoundryKey = "PoVoiceHud/FoundryKey";
+    /// <summary>A GitHub or Azure DevOps personal access token for a private code repository.</summary>
+    public const string RepoToken = "PoVoiceHud/RepoToken";
 
     private const int CredTypeGeneric = 1;
     private const int CredPersistLocalMachine = 2;

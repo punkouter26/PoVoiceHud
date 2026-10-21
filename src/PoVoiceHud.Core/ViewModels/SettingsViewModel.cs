@@ -3,14 +3,15 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PoVoiceHud.Core.Config;
 using PoVoiceHud.Core.Providers.FactCheck;
+using PoVoiceHud.Core.Repos;
 
 namespace PoVoiceHud.Core.ViewModels;
 
 /// <summary>
-/// Edits <see cref="Settings"/> plus the Foundry key: the endpoint and key, then four switches. Nothing changes until
-/// <see cref="ApplyCommand"/>, which first makes one real call to the model whenever the endpoint or key changed (or setup
-/// is needed), so a wrong one is caught here. <see cref="CancelCommand"/> puts back what was applied. The key is written
-/// only when typed (blank keeps the stored one).
+/// Edits <see cref="Settings"/> plus two secrets: the Foundry endpoint and key, the optional code repository and its access
+/// token, then three switches. Nothing changes until <see cref="ApplyCommand"/>, which first makes one real call to the model
+/// whenever the endpoint or key changed (or setup is needed), and reads a new repository, so a wrong one is caught here.
+/// <see cref="CancelCommand"/> puts back what was applied. A secret is written only when typed (blank keeps the stored one).
 /// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
@@ -21,28 +22,38 @@ public sealed partial class SettingsViewModel : ObservableObject
     private readonly Action<string, string> _writeSecret;
     private readonly Action<Settings> _save;
     private readonly Func<Uri, string?, ILanguageModel> _connect;
+    private readonly Func<string, string?, Task<string>> _probeRepository;
     private Settings _original;
 
     [ObservableProperty] private string? _endpoint;
     [ObservableProperty] private string _key = "";
     [ObservableProperty] private bool _hasKey;
+    [ObservableProperty] private string? _repository;
+    [ObservableProperty] private string _repositoryToken = "";
+    [ObservableProperty] private bool _hasRepositoryToken;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(LookUpNote))] private bool _lookUpClaims;
-    [ObservableProperty] private bool _listenToCall;
     [ObservableProperty] private bool _startWithWindows;
     [ObservableProperty] private bool _sounds;
-    /// <summary>What the last Apply found: "✓ Connected…", "✗ The key was refused…", or "Checking the connection…".</summary>
-    [ObservableProperty] private string? _message;
+    /// <summary>
+    /// What the last Apply found: "✓ Connected…", "✗ The key was refused…", "Checking the connection…", or "" for nothing.
+    /// Never null: the page binds functions to it, and x:Bind does not call a function whose argument is null, so the dot
+    /// would keep its old colour beside an empty line.
+    /// </summary>
+    [ObservableProperty] private string _message = "";
     /// <summary>No working endpoint and key yet: Apply always checks the connection, and there is nothing to cancel back to.</summary>
     [ObservableProperty] private bool _requiresSetup;
 
     /// <param name="connect">Builds the model client for the connection check from the endpoint and key.</param>
+    /// <param name="probeRepository">Reads a repository with a token and says what it found, starting with ✓ or ✗ (<see cref="RepoSource.Probe"/> by default).</param>
     public SettingsViewModel(Settings settings, Func<string, string?> readSecret, Action<string, string> writeSecret,
-        Action<Settings> save, Func<Uri, string?, ILanguageModel> connect)
+        Action<Settings> save, Func<Uri, string?, ILanguageModel> connect, Func<string, string?, Task<string>>? probeRepository = null)
     {
         (_original, _readSecret, _writeSecret, _save, _connect) = (settings, readSecret, writeSecret, save, connect);
+        _probeRepository = probeRepository ?? ((location, token) => Task.Run(() => RepoSource.Probe(location, token)));
         _endpoint = settings.FoundryEndpoint;
+        _repository = settings.Repository;
+        _hasRepositoryToken = readSecret(CredentialStore.RepoToken) is not null;
         _lookUpClaims = settings.LookUpClaims;
-        _listenToCall = settings.ListenToCall;
         _startWithWindows = settings.StartWithWindows;
         _sounds = settings.Sounds;
         _hasKey = readSecret(CredentialStore.FoundryKey) is not null;
@@ -59,8 +70,8 @@ public sealed partial class SettingsViewModel : ObservableObject
     public Settings ToSettings() => _original with
     {
         FoundryEndpoint = Blank(Endpoint),
+        Repository = Blank(Repository),
         LookUpClaims = LookUpClaims,
-        ListenToCall = ListenToCall,
         StartWithWindows = StartWithWindows,
         Sounds = Sounds,
     };
@@ -69,7 +80,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public void RequireSetup(string? why)
     {
         RequiresSetup = true;
-        Message = why is null ? null : $"✗ {why}";
+        Message = why is null ? "" : $"✗ {why}";
     }
 
     /// <summary>Puts back what was last applied: leaving the settings without Apply discards the edits.</summary>
@@ -77,11 +88,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     {
         Endpoint = _original.FoundryEndpoint;
         Key = "";
+        Repository = _original.Repository;
+        RepositoryToken = "";
         LookUpClaims = _original.LookUpClaims;
-        ListenToCall = _original.ListenToCall;
         StartWithWindows = _original.StartWithWindows;
         Sounds = _original.Sounds;
-        if (!RequiresSetup) Message = null;
+        if (!RequiresSetup) Message = "";
     }
 
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
@@ -95,9 +107,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    private bool CanApply() => RequiresSetup || ToSettings() != _original || Blank(Key) is not null;
+    private bool CanApply() => RequiresSetup || ToSettings() != _original || Blank(Key) is not null || Blank(RepositoryToken) is not null;
 
-    /// <summary>Checks a new endpoint or key with one real call, then stores the key and saves and applies the settings.</summary>
+    /// <summary>
+    /// Checks a new endpoint or key with one real call and reads a new repository, then stores the secrets and saves and
+    /// applies the settings. Anything that fails stops it, with the reason in <see cref="Message"/>.
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanApply))]
     private async Task Apply()
     {
@@ -114,6 +129,7 @@ public sealed partial class SettingsViewModel : ObservableObject
             return;
         }
 
+        var found = new List<string>();
         var connectionChanged = RequiresSetup || typed is not null || endpoint != _original.FoundryEndpoint;
         if (connectionChanged)
         {
@@ -123,6 +139,21 @@ public sealed partial class SettingsViewModel : ObservableObject
                 Message = $"✗ {problem.Message}";
                 return;
             }
+            found.Add($"✓ Connected — {FoundryClient.Model} answered.");
+        }
+
+        var repository = Blank(Repository);
+        var typedToken = Blank(RepositoryToken);
+        if (repository is not null && (repository != _original.Repository || typedToken is not null))
+        {
+            Message = "Reading the repository…";
+            var probe = await _probeRepository(repository, typedToken ?? _readSecret(CredentialStore.RepoToken));
+            if (!probe.StartsWith('✓'))
+            {
+                Message = probe;
+                return;
+            }
+            found.Add(probe);
         }
 
         // The key first: applying the settings builds a fact checker, which reads it.
@@ -132,10 +163,16 @@ public sealed partial class SettingsViewModel : ObservableObject
             HasKey = true;
             Key = "";
         }
+        if (typedToken is not null)
+        {
+            _writeSecret(CredentialStore.RepoToken, typedToken);
+            HasRepositoryToken = true;
+            RepositoryToken = "";
+        }
         var settings = ToSettings();
         _original = settings;
         RequiresSetup = false;
-        Message = connectionChanged ? $"✓ Connected — {FoundryClient.Model} answered." : null;
+        Message = string.Join("\n", found);
         ApplyCommand.NotifyCanExecuteChanged();
         _save(settings);
         Done?.Invoke();
